@@ -1,4 +1,4 @@
-name: Daily safe recommendations v3.1
+name: Daily research review queue v3.7
 on:
   workflow_dispatch:
     inputs:
@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: blog-daily-v3-1
+  group: blog-daily-v3-7
   cancel-in-progress: false
 jobs:
   recommend:
@@ -27,10 +27,10 @@ jobs:
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
       NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
       NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       NOTION_DAILY_DS: '13615add-6aef-417c-b1f7-ca93217f4cea'
       NOTION_SOURCES_DS: '51596cf1-d049-472d-9689-8048f527ab41'
       NOTION_LOGS_DS: '25735bf7-9a91-4d0a-a596-d867d9c66447'
+      REVIEW_QUEUE: 'true'
       DRY_RUN: ${{ github.event_name == 'schedule' && 'true' || inputs.dry_run }}
       RECOMMEND_DATE: ${{ inputs.recommend_date }}
     steps:
