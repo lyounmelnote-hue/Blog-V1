@@ -7,13 +7,12 @@ on:
         default: true
         required: true
       recommend_date:
-        description: 'Optional YYYY-MM-DD (KST)'
         type: string
         required: false
         default: ''
-  # schedule disabled until integration test
-  # schedule:
-  # - cron: '7 21 * * *' # 06:07 KST; GitHub schedule may be delayed
+
+  schedule:
+    - cron: '0 21 * * *'
 permissions:
   contents: read
 concurrency:
@@ -31,7 +30,7 @@ jobs:
       NOTION_SOURCES_DS: '51596cf1-d049-472d-9689-8048f527ab41'
       NOTION_LOGS_DS: '25735bf7-9a91-4d0a-a596-d867d9c66447'
       REVIEW_QUEUE: 'true'
-      DRY_RUN: ${{ github.event_name == 'schedule' && 'true' || inputs.dry_run }}
+      DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
       RECOMMEND_DATE: ${{ inputs.recommend_date }}
     steps:
       - uses: actions/checkout@v4
