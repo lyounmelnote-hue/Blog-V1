@@ -1,0 +1,44 @@
+name: Daily safe recommendations v3.1
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        type: boolean
+        default: true
+        required: true
+      recommend_date:
+        description: 'Optional YYYY-MM-DD (KST)'
+        type: string
+        required: false
+        default: ''
+  # schedule disabled until integration test
+  # schedule:
+  # - cron: '7 21 * * *' # 06:07 KST; GitHub schedule may be delayed
+permissions:
+  contents: read
+concurrency:
+  group: blog-daily-v3-1
+  cancel-in-progress: false
+jobs:
+  recommend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      NOTION_DAILY_DS: '13615add-6aef-417c-b1f7-ca93217f4cea'
+      NOTION_SOURCES_DS: '51596cf1-d049-472d-9689-8048f527ab41'
+      NOTION_LOGS_DS: '25735bf7-9a91-4d0a-a596-d867d9c66447'
+      DRY_RUN: ${{ github.event_name == 'schedule' && 'true' || inputs.dry_run }}
+      RECOMMEND_DATE: ${{ inputs.recommend_date }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+      - run: python -m src.daily
