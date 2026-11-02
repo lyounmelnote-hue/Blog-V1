@@ -23,3 +23,14 @@
 
 ## 테스트
 `python -m pip install -r requirements.txt && python -m unittest discover -s tests -v`
+
+
+## v3.5: 후보 탈락 사유 진단
+- `SOURCE_DIAGNOSTICS`: 사용 가능한 VERIFIED + 원문확인 출처 수 및 공식 도메인 수
+- `GATE_DIAGNOSTICS`: 분야별 A/B/A-C 탈락 집계. 개인정보 및 API 키 출력 없음.
+- 마지막 JSON `summary`에도 `rejection_reasons`가 포함됩니다.
+- `DRY_RUN=true` 유지. 후보별 전문이나 실제 기사 URL을 로그에 노출하지 않습니다.
+- **중요:** 출처 검증이 되지 않은 자료를 VERIFIED로 변경하지 마세요.
+- 실제 기사 주장과 출처의 일치 여부는 사람 검토가 필수입니다.
+- 일일 추천은 0건일 수 있으며 이는 실패가 아닙니다.
+- GitHub Actions는 `.github/workflows/daily-recommendations.yml`을 덮어씁니다.

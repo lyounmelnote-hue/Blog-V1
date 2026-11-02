@@ -5,6 +5,7 @@ import os
 import re
 import sys
 from datetime import datetime, timezone, timedelta
+from collections import Counter
 from urllib.parse import urlparse
 from .main import notion, query, request, rich, textprop, SOURCES, CONTENT, KEYWORDS, save_log
 
@@ -100,6 +101,20 @@ def shortlist(category, candidates, sources, judge=rule_gate):
     return sorted(accepted,key=lambda x:-x[0])[:2],rejected
 
 
+def rejection_report(rejected):
+    """Aggregated editorial diagnostics; never logs secrets or full source text."""
+    counts = Counter()
+    for _item, reason in rejected:
+        prefix = reason.split(':', 1)[0].strip()
+        counts[prefix if prefix in ('A', 'B', 'C', 'A/C') else 'OTHER'] += 1
+    return dict(sorted(counts.items()))
+
+
+def source_report(sources):
+    return {'verified_usable_sources': len(sources),
+            'official_usable_sources': sum(is_official(s['url']) for s in sources)}
+
+
 def date_kst():
     return datetime.now(timezone(timedelta(hours=9))).date().isoformat()
 
@@ -129,6 +144,7 @@ def run():
     run_id=os.getenv('GITHUB_RUN_ID','local')+'-'+os.getenv('GITHUB_RUN_ATTEMPT','1')
     sources=curated_sources()
     summary={}
+    print('SOURCE_DIAGNOSTICS', json.dumps(source_report(sources), ensure_ascii=False))
     for index,category in enumerate(CATEGORIES):
         existing=already_created(date,category)
         if existing:
@@ -137,7 +153,9 @@ def run():
         for seed in SEEDS[category]:
             candidates.extend(search(seed,'news',8))
         accepted,rejected=shortlist(category,candidates,sources)
-        summary[category]={'selected':len(accepted),'rejected':len(rejected),'missing':2-len(accepted)}
+        summary[category]={'selected':len(accepted),'rejected':len(rejected),'missing':2-len(accepted),
+                           'rejection_reasons':rejection_report(rejected)}
+        print('GATE_DIAGNOSTICS', json.dumps({'category':category, 'counts':rejection_report(rejected)}, ensure_ascii=False))
         # A previous partial run is skipped above; this run may create up to two rows.
         for i,(score,item,evidence) in enumerate(accepted):
             print('SELECT',category,index*2+i+1,item['title'],score)
