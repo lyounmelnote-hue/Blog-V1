@@ -6,7 +6,7 @@ import re
 import sys
 from datetime import datetime, timezone, timedelta
 from collections import Counter
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 from .main import notion, query, request, rich, textprop, SOURCES, CONTENT, KEYWORDS, save_log
 
 DAILY = os.getenv('NOTION_DAILY_DS', '13615add-6aef-417c-b1f7-ca93217f4cea')
@@ -101,6 +101,60 @@ def shortlist(category, candidates, sources, judge=rule_gate):
     return sorted(accepted,key=lambda x:-x[0])[:2],rejected
 
 
+
+def queue_shortlist(candidates, limit=2):
+    """Unverified review queue: never treat a search result as verified evidence."""
+    selected, rejected, seen = [], [], set()
+    for item in candidates:
+        key = re.sub(r'\W', '', item.get('title', '')).lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        if not item.get('url') or not urlparse(item['url']).scheme in ('http', 'https'):
+            rejected.append((item, 'B: 원문 URL 없음')); continue
+        verdict = rule_gate('', item)
+        if verdict['A'] == '제외' or verdict['C'] == '제외':
+            rejected.append((item, 'A/C: ' + verdict['reason'])); continue
+        if not item.get('summary'):
+            rejected.append((item, 'C: 요약 누락')); continue
+        if len(selected) < limit:
+            selected.append(item)
+    return selected, rejected
+
+
+def create_unverified_source(item):
+    """Article URL is a research lead, NOT a verified supporting citation."""
+    props = {
+        '자료명': {'title': rich(item['title'][:150])},
+        'URL': {'url': item['url']},
+        '검증 상태': {'select': {'name': 'UNVERIFIED'}},
+        '원문 확인 여부': {'checkbox': False},
+    }
+    return notion('POST', '/pages', safe_retry=False, json={
+        'parent': {'type': 'data_source_id', 'data_source_id': SOURCES},
+        'properties': props})
+
+
+def save_review_candidate(date, category, slot, item, run_id, source_id):
+    props = {
+        '후보 제목': {'title': rich(item['title'][:150])},
+        '추천일': {'date': {'start': date}},
+        '분야': {'select': {'name': category}},
+        '슬롯 번호': {'number': slot},
+        '한 줄 요약': {'rich_text': rich(item['summary'][:1800])},
+        '논란도': {'select': {'name': '주의'}},
+        '신빙성': {'select': {'name': '주의'}},
+        '불쾌도': {'select': {'name': '주의'}},
+        '상태': {'select': {'name': '보류'}},
+        '실행 ID': {'rich_text': rich(run_id)},
+        '원본 링크': {'url': item['url']},
+        '근거 출처': {'relation': [{'id': source_id}]},
+        '검증 메모': {'rich_text': rich('검증 대기: 자동 수집된 기사이며 출처는 UNVERIFIED. 원문·공식 근거를 사람이 확인하고 검증 상태를 변경해야 합니다.')},
+    }
+    return notion('POST', '/pages', safe_retry=False, json={
+        'parent': {'type': 'data_source_id', 'data_source_id': DAILY},
+        'properties': props})
+
 def rejection_report(rejected):
     """Aggregated editorial diagnostics; never logs secrets or full source text."""
     counts = Counter()
@@ -117,6 +171,60 @@ def source_report(sources):
 
 def date_kst():
     return datetime.now(timezone(timedelta(hours=9))).date().isoformat()
+
+
+def normalized_article_url(url):
+    """Canonicalize a news URL for conservative within-day duplicate detection."""
+    try:
+        u = urlparse((url or '').strip())
+        if u.scheme.lower() not in ('http', 'https') or not u.hostname:
+            return ''
+        host = u.hostname.lower().removeprefix('www.')
+        port = (':' + str(u.port)) if u.port and u.port not in (80, 443) else ''
+        path = u.path.rstrip('/') or '/'
+        params = sorted((k, v) for k, v in parse_qsl(u.query, keep_blank_values=True)
+                        if not (k.lower().startswith('utm_') or k.lower() in
+                                    ('fbclid', 'gclid', 'ref', 'source')))
+        return urlunparse(('https', host + port, path, '', urlencode(params), ''))
+    except (ValueError, TypeError):
+        return ''
+
+
+def existing_day_rows(date):
+    """Fetch all rows for the date (including pagination) to avoid cross-category duplicates."""
+    return query(DAILY, {'property': '추천일', 'date': {'equals': date}}, page_size=100)
+
+
+def existing_category_counts(rows):
+    counts = Counter()
+    for row in rows:
+        category = (row.get('properties', {}).get('분야', {}).get('select') or {}).get('name')
+        if category:
+            counts[category] += 1
+    return counts
+
+
+def existing_day_urls(rows):
+    urls = set()
+    for row in rows:
+        props = row.get('properties', {})
+        url = normalized_article_url((props.get('원본 링크') or {}).get('url'))
+        if url:
+            urls.add(url)
+    return urls
+
+
+def dedupe_candidates(candidates, existing_urls):
+    """Remove existing-day URLs and duplicate URLs within this batch."""
+    result, seen = [], set(existing_urls)
+    for item in candidates:
+        url = normalized_article_url(item.get('url'))
+        if url and url in seen:
+            continue
+        if url:
+            seen.add(url)
+        result.append(item)
+    return result
 
 
 def already_created(date, category):
@@ -143,29 +251,49 @@ def run():
     date=os.getenv('RECOMMEND_DATE') or date_kst()
     run_id=os.getenv('GITHUB_RUN_ID','local')+'-'+os.getenv('GITHUB_RUN_ATTEMPT','1')
     sources=curated_sources()
+    review_queue = os.getenv('REVIEW_QUEUE', 'true').lower() == 'true'
     summary={}
+    day_rows = existing_day_rows(date)
+    category_counts = existing_category_counts(day_rows)
+    used_urls = existing_day_urls(day_rows)
+    print('DEDUP_DIAGNOSTICS', json.dumps({'date': date, 'existing_rows': len(day_rows), 'categories': dict(category_counts), 'existing_urls': len(used_urls)}, ensure_ascii=False))
     print('SOURCE_DIAGNOSTICS', json.dumps(source_report(sources), ensure_ascii=False))
     for index,category in enumerate(CATEGORIES):
-        existing=already_created(date,category)
-        if existing:
-            print(category,'already exists:',len(existing),'skipping to prevent duplicates');continue
+        existing_count = category_counts.get(category, 0)
+        if existing_count:
+            summary[category] = {'selected': 0, 'rejected': 0, 'missing': 0, 'skipped_existing': existing_count}
+            print('DEDUP_SKIP', json.dumps({'date': date, 'category': category, 'existing_rows': existing_count, 'reason': 'same_date_category'}, ensure_ascii=False))
+            continue
         candidates=[]
         for seed in SEEDS[category]:
             candidates.extend(search(seed,'news',8))
-        accepted,rejected=shortlist(category,candidates,sources)
+        before_dedupe = len(candidates)
+        candidates = dedupe_candidates(candidates, used_urls)
+        print('DEDUP_FILTER', json.dumps({'category': category, 'removed': before_dedupe-len(candidates)}, ensure_ascii=False))
+        if review_queue:
+            queued,rejected=queue_shortlist(candidates)
+            accepted=[(0,item,[]) for item in queued]
+        else:
+            accepted,rejected=shortlist(category,candidates,sources)
         summary[category]={'selected':len(accepted),'rejected':len(rejected),'missing':2-len(accepted),
                            'rejection_reasons':rejection_report(rejected)}
         print('GATE_DIAGNOSTICS', json.dumps({'category':category, 'counts':rejection_report(rejected)}, ensure_ascii=False))
         # A previous partial run is skipped above; this run may create up to two rows.
         for i,(score,item,evidence) in enumerate(accepted):
-            print('SELECT',category,index*2+i+1,item['title'],score)
+            print('REVIEW_QUEUE' if review_queue else 'SELECT', category, index*2+i+1, item['title'])
             if not dry:
-                # GitHub concurrency serializes runs of this workflow.
-                save_candidate(date,category,index*2+i+1,score,item,evidence,run_id)
+                if review_queue:
+                    source = create_unverified_source(item)
+                    save_review_candidate(date,category,index*2+i+1,item,run_id,source['id'])
+                else:
+                    save_candidate(date,category,index*2+i+1,score,item,evidence,run_id)
+                normalized = normalized_article_url(item.get('url'))
+                if normalized:
+                    used_urls.add(normalized)
         if not dry and len(accepted)<2:
             save_log('슬롯 미충족: '+category,run_id,'RESEARCH','SKIPPED',
                      f'{date}: {2-len(accepted)}개 부족, 필터 제외 {len(rejected)}개')
-    print(json.dumps({'date':date,'dry_run':dry,'summary':summary},ensure_ascii=False))
+    print(json.dumps({'date':date,'dry_run':dry,'review_queue':review_queue,'summary':summary},ensure_ascii=False))
 
 
 if __name__=='__main__':
