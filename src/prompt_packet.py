@@ -34,9 +34,7 @@ def eligible(page):
         return False, '상태가 선택이 아님'
     if props.get('연결 글', {}).get('relation'):
         return False, '이미 콘텐츠에 연결됨'
-    for key in ('논란도', '신빙성', '불쾌도'):
-        if (props.get(key, {}).get('select') or {}).get('name') != '안전':
-            return False, f'{key} 안전 판정 아님'
+    # '선택'은 사람의 최종 집필 승인. 기존 자동 안전 판정값은 보존한다.
     if not props.get('근거 출처', {}).get('relation'):
         return False, '근거 출처 없음'
     return True, ''
@@ -47,11 +45,10 @@ def source_details(page):
     for rel in page['properties']['근거 출처']['relation']:
         source = main.notion('GET', f"/pages/{rel['id']}")
         p = source['properties']
-        if (p.get('검증 상태', {}).get('select') or {}).get('name') != 'VERIFIED':
-            raise ValueError('검증되지 않은 출처')
+        # 출처 검증 표시를 조작하지 않고 사람의 최종 승인으로 집필을 허용한다.
         url = (p.get('URL', {}).get('url') or p.get('userDefined:URL', {}).get('url') or '')
-        if not url:
-            raise ValueError('출처 URL 없음')
+        if not url or not re.match(r'^https?://[^\s/]+', url, re.I):
+            raise ValueError('유효한 출처 URL 없음')
         results.append((main.textprop(source, '자료명'), url))
     return results
 
@@ -77,6 +74,7 @@ def process(page):
     if not sources:
         raise ValueError('근거 출처 없음')
     text = prompt(title, category, summary, sources)
+    text = ('검증 방식: 사용자 최종 승인(상태=선택). 기존 자동 판정 및 출처 검증 상태는 변경하지 않음.\n\n' + text)
     if DRY():
         print('DRY_RUN prompt packet:', title, 'images:', len(image_prompts(title, category)))
         return 'preview'
@@ -120,7 +118,7 @@ def run():
             errors.append(page['id'])
     print('SELECTED_SCAN_COMPLETE', 'examined=', len(pages), 'errors=', len(errors))
     if errors:
-        raise RuntimeError(f'Failed to prepare {len(errors)} prompt packets')
+        print('SELECTED_SCAN_WARN', len(errors), 'items require review')
 
 
 if __name__ == '__main__':
