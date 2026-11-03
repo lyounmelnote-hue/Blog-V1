@@ -1,0 +1,46 @@
+name: Historical recommendation score backfill v4.3.1
+on:
+  workflow_dispatch:
+    inputs:
+      backfill_date:
+        description: 'Target KST recommendation date YYYY-MM-DD'
+        type: string
+        required: true
+        default: '2026-11-03'
+      dry_run:
+        description: 'Preview scores without modifying Notion'
+        type: boolean
+        required: true
+        default: true
+      force:
+        description: 'Recalculate existing scores (use only if intentionally requested)'
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: blog-daily-v3-8
+  cancel-in-progress: false
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      NOTION_DAILY_DS: '13615add-6aef-417c-b1f7-ca93217f4cea'
+      BACKFILL_DATE: ${{ inputs.backfill_date }}
+      BACKFILL_FORCE: ${{ inputs.force }}
+      DRY_RUN: ${{ inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+      - name: Preview or backfill recommendation scores
+        run: python -m src.score_backfill
