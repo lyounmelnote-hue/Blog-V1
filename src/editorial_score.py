@@ -2,6 +2,7 @@
 import math
 import re
 from datetime import datetime, timezone, timedelta
+from email.utils import parsedate_to_datetime
 
 KST = timezone(timedelta(hours=9))
 UTILITY = ('방법','사용법','신청','확인','정리','비교','준비','절약','안내','찾기','변경','지원','혜택','무료','꿀팁','주의사항','체크리스트','예약')
@@ -25,7 +26,10 @@ def freshness(item, today=None):
     pub = item.get('published_at')
     if pub:
         try:
-            dt = datetime.fromisoformat(pub.replace('Z', '+00:00'))
+            try:
+                dt = datetime.fromisoformat(pub.replace('Z', '+00:00'))
+            except ValueError:
+                dt = parsedate_to_datetime(pub)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=KST)
             days = (now - dt.astimezone(KST)).total_seconds() / 86400
