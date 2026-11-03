@@ -1,0 +1,33 @@
+name: Editorial performance review v4.4
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NOTION_CONTENT_DS: 'b2ace958-aa15-4105-973b-5fb1af090ec3'
+      NOTION_DAILY_DS: '13615add-6aef-417c-b1f7-ca93217f4cea'
+      NOTION_ANALYTICS_DS: 'db3e1b5b-1016-498f-99d5-919aa7d262b3'
+      REPORT_DIR: reports/v4.4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+      - name: Analyze published content (read only)
+        run: python -m src.performance_review
+      - name: Upload review files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: editorial-performance-v4.4
+          path: reports/v4.4/
+          if-no-files-found: warn
+          retention-days: 30
