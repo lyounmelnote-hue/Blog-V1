@@ -29,10 +29,36 @@ def get_blocks(page_id):
 
 
 def extract_draft(blocks):
+    """Extract the submitted draft, including Notion nested list/quote blocks."""
     capturing, lines = False, []
+    allowed = ('paragraph', 'heading_1', 'heading_2', 'heading_3',
+               'bulleted_list_item', 'numbered_list_item', 'quote',
+               'to_do', 'code', 'divider')
+
+    def append_block(block, depth=0, ancestry=()):
+        if depth > 8:
+            raise ValueError('중첩 블록 깊이 한도 초과')
+        kind = block.get('type', '')
+        if kind not in allowed:
+            raise ValueError(f'지원하지 않는 원고 블록: {kind}')
+        text = block_text(block).strip()
+        if text:
+            prefix = {'heading_1': '# ', 'heading_2': '## ',
+                      'heading_3': '### ', 'bulleted_list_item': '- ',
+                      'numbered_list_item': '1. ', 'quote': '> '}.get(kind, '')
+            lines.append(('  ' * depth) + prefix + text)
+        if block.get('has_children'):
+            block_id = block.get('id')
+            if not block_id:
+                raise ValueError('하위 블록 ID 누락')
+            if block_id in ancestry:
+                raise ValueError('순환 참조 블록')
+            for child in get_blocks(block_id):
+                append_block(child, depth + 1, ancestry + (block_id,))
+
     for block in blocks:
         kind, text = block.get('type', ''), block_text(block).strip()
-        normalized = re.sub(r'^#{1,6}\s*', '', text).strip()
+        normalized = re.sub(r'^#{1,6}\\s*', '', text).strip()
         if kind in ('heading_1', 'heading_2', 'heading_3') and normalized == START:
             if capturing:
                 raise ValueError('원고 제출 섹션 중복')
@@ -41,14 +67,8 @@ def extract_draft(blocks):
         if capturing and kind in ('heading_1', 'heading_2', 'heading_3') and normalized == REPORT:
             break
         if capturing:
-            if block.get('has_children'):
-                raise ValueError('중첩 블록 대신 일반 문단으로 붙여넣으세요')
-            if kind not in ('paragraph', 'heading_1', 'heading_2', 'heading_3',
-                            'bulleted_list_item', 'numbered_list_item', 'quote'):
-                raise ValueError(f'지원하지 않는 원고 블록: {kind}')
-            if text:
-                lines.append(text)
-    draft = '\n\n'.join(lines).strip()
+            append_block(block)
+    draft = '\\n\\n'.join(lines).strip()
     if len(draft) > 100000:
         raise ValueError('원고가 최대 글자 수를 초과함')
     return draft
