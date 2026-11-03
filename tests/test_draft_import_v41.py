@@ -41,6 +41,24 @@ class DraftImportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '하위 블록 ID 누락'):
             di.extract_draft([block('heading_2', '원고 제출'), parent])
 
+    def test_notion_table_import(self):
+        table = {'id': 'table-1', 'type': 'table',
+                 'has_children': True, 'table': {'has_column_header': True}}
+        def row(a, b):
+            return {'type': 'table_row', 'table_row': {'cells': [
+                [{'plain_text': a}], [{'plain_text': b}]]}}
+        with patch.object(di, 'get_blocks', return_value=[
+            row('항목', '설명'), row('음성 검색', '지원')]):
+            result = di.extract_draft([block('heading_2', '원고 제출'), table])
+        self.assertIn('| 항목 | 설명 |', result)
+        self.assertIn('| --- | --- |', result)
+        self.assertIn('| 음성 검색 | 지원 |', result)
+
+    def test_table_without_id_rejected(self):
+        with self.assertRaisesRegex(ValueError, '표 블록 ID 누락'):
+            di.extract_draft([block('heading_2', '원고 제출'),
+                              {'type': 'table', 'table': {}}])
+
     def test_empty_submission_waits(self):
         with patch.object(di, 'get_blocks', return_value=[block('paragraph', 'old prompt')]):
             self.assertEqual(di.process(page()), 'waiting')
