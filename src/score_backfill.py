@@ -36,7 +36,9 @@ def row_item(row):
     }
 
 
-def calculate(rows, lookup=daily.blog_result_count):
+def calculate(rows, lookup=None):
+    if lookup is None:
+        lookup = daily.blog_result_count
     items = [row_item(row) for row in rows]
     results = []
     for row, item in zip(rows, items):
