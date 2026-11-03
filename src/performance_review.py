@@ -10,7 +10,8 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
-from .main import CONTENT, query, textprop
+from .main import CONTENT, query, textprop, notion
+import requests
 
 ANALYTICS = os.getenv('NOTION_ANALYTICS_DS', 'db3e1b5b-1016-498f-99d5-919aa7d262b3')
 OUT = Path(os.getenv('REPORT_DIR', 'reports/v4.4'))
@@ -150,9 +151,35 @@ def spearman(a, b):
     return round(sum((u-xm)*(v-ym) for u,v in zip(x,y))/den, 4) if den else None
 
 
+def fetch_analytics_rows():
+    try:
+        return query(ANALYTICS, page_size=100)
+    except requests.HTTPError as exc:
+        if exc.response is None or exc.response.status_code != 404:
+            raise
+        # Notion API database ID may differ from the data-source ID.
+        try:
+            parent = notion('GET', '/databases/' + ANALYTICS)
+        except requests.HTTPError as discovery_exc:
+            if discovery_exc.response is not None and discovery_exc.response.status_code == 404:
+                raise RuntimeError(
+                    'BLOG_ANALYTICS 404: GitHub NOTION_TOKEN 통합에 DB를 공유하고 '
+                    '실제 data_source ID를 NOTION_ANALYTICS_DS에 지정하세요. '
+                    'ChatGPT Notion 연결 권한과 GitHub 토큰 권한은 별개입니다.'
+                ) from discovery_exc
+            raise
+        sources = parent.get('data_sources') or []
+        if len(sources) != 1 or not sources[0].get('id'):
+            raise RuntimeError('BLOG_ANALYTICS의 데이터 소스가 0개 또는 여러 개입니다. '
+                               '실제 data_source ID를 NOTION_ANALYTICS_DS로 지정하세요.') from exc
+        resolved = sources[0]['id']
+        print('V44_RESOLVED_ANALYTICS_DS', resolved)
+        return query(resolved, page_size=100)
+
+
 def run():
     contents = query(CONTENT, page_size=100)
-    analytics = query(ANALYTICS, page_size=100)
+    analytics = fetch_analytics_rows()
     from .daily import DAILY
     recommendations = query(DAILY, page_size=100)
     summary, rows = report(contents, analytics, recommendations)
