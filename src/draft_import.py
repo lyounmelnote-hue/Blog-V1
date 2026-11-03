@@ -99,9 +99,22 @@ def process(page):
     if (props.get('집필 요청 상태', {}).get('select') or {}).get('name') != 'PROMPT_READY':
         return 'skipped'
     blocks = get_blocks(page_id)
-    if any(b.get('type') in ('heading_1', 'heading_2', 'heading_3') and
-           block_text(b).strip() == REPORT for b in blocks):
-        print('IMPORT_ALREADY_REVIEWED', page_id)
+    report_indices = [i for i, b in enumerate(blocks)
+                      if b.get('type') in ('heading_1', 'heading_2', 'heading_3')
+                      and block_text(b).strip() == REPORT]
+    if report_indices:
+        # Recover a partially completed run: QA was appended but status PATCH failed.
+        print('IMPORT_REPORT_EXISTS', page_id)
+        if not DRY():
+            tail = ' '.join(block_text(b) for b in blocks[report_indices[-1] + 1:])
+            recovered = 'DRAFT_IMPORTED' if '형식 검사 통과(사람 검수 필요)' in tail else 'NEEDS_REVIEW'
+            main.notion('PATCH', f'/pages/{page_id}', json={'properties': {
+                '집필 요청 상태': {'select': {'name': recovered}},
+                '상태': {'select': {'name': 'REVIEW'}},
+                '파이프라인 단계': {'select': {'name': 'REVIEW'}},
+                '검수 승인': {'checkbox': False}
+            }})
+            return 'recovered'
         return 'skipped'
     draft = extract_draft(blocks)
     if not draft:
