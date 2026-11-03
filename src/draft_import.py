@@ -44,7 +44,7 @@ def extract_draft(blocks):
         if kind == 'table_row':
             cells = block.get('table_row', {}).get('cells', [])
             values = [''.join(part.get('plain_text', part.get('text', {}).get('content', ''))
-                              for part in cell).replace('|', r'\\|').replace('\\n', ' ')
+                              for part in cell).replace('|', r'\|').replace('\n', ' ')
                       for cell in cells]
             if values:
                 lines.append('| ' + ' | '.join(values) + ' |')
