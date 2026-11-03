@@ -1,4 +1,4 @@
-name: Selected recommendation to ChatGPT prompt v3.9
+name: Selected recommendation and draft import v4.1
 on:
   workflow_dispatch:
     inputs:
@@ -33,3 +33,5 @@ jobs:
       - run: python -m unittest discover -s tests -v
       - name: Selected recommendation processing
         run: python -m src.prompt_packet
+      - name: Import submitted drafts and run rule-based QA
+        run: python -m src.draft_import
