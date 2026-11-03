@@ -1,4 +1,4 @@
-name: Daily research review queue v3.7
+name: Daily research review queue v3.8
 on:
   workflow_dispatch:
     inputs:
@@ -10,13 +10,13 @@ on:
         type: string
         required: false
         default: ''
-
   schedule:
-    - cron: '0 21 * * *'
+    - cron: '7 21 * * *' # 06:07 KST primary
+    - cron: '7 22 * * *' # 07:07 KST recovery
 permissions:
   contents: read
 concurrency:
-  group: blog-daily-v3-7
+  group: blog-daily-v3-8
   cancel-in-progress: false
 jobs:
   recommend:
@@ -40,4 +40,17 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s tests -v
+      - name: Scheduled execution diagnostics
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SCHEDULE_EXPR: ${{ github.event.schedule }}
+        run: |
+          python - <<'PY'
+          import os
+          event = os.getenv('EVENT_NAME', '')
+          cron = os.getenv('SCHEDULE_EXPR', '')
+          kind = 'recovery' if cron == '7 22 * * *' else ('primary' if cron == '7 21 * * *' else 'manual')
+          print(f'SCHEDULE_DIAGNOSTICS event={event} mode={kind} cron={cron or "none"}')
+          print('Recovery checks existing Notion rows using src.daily DEDUP_DIAGNOSTICS and DEDUP_SKIP.')
+          PY
       - run: python -m src.daily
