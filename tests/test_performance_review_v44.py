@@ -1,4 +1,6 @@
 import unittest
+from unittest.mock import patch
+import requests
 from datetime import date
 from src import performance_review as pr
 
@@ -28,6 +30,29 @@ def measurement(aid='a1', cid='c1', day='2026-10-23', views=100, edit='2026-10-2
 
 
 class PerformanceReviewTests(unittest.TestCase):
+    @patch('src.performance_review.notion')
+    @patch('src.performance_review.query')
+    def test_analytics_database_id_fallback(self, query, notion):
+        response = requests.Response()
+        response.status_code = 404
+        error = requests.HTTPError('404', response=response)
+        query.side_effect = [error, [{'id': 'measurement-1'}]]
+        notion.return_value = {'data_sources': [{'id': 'real-source-id'}]}
+        result = pr.fetch_analytics_rows()
+        self.assertEqual(result[0]['id'], 'measurement-1')
+        self.assertEqual(query.call_args.args[0], 'real-source-id')
+
+    @patch('src.performance_review.notion')
+    @patch('src.performance_review.query')
+    def test_analytics_permission_error_is_explicit(self, query, notion):
+        response = requests.Response()
+        response.status_code = 404
+        error = requests.HTTPError('404', response=response)
+        query.side_effect = error
+        notion.side_effect = error
+        with self.assertRaisesRegex(RuntimeError, 'NOTION_TOKEN'):
+            pr.fetch_analytics_rows()
+
     def test_snapshot_not_sum(self):
         summary, rows=pr.report([content()],[
             measurement(day='2026-10-21',views=50),
