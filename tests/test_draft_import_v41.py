@@ -64,6 +64,17 @@ class DraftImportTests(unittest.TestCase):
             self.assertEqual(di.process(page()), 'skipped')
 
     @patch('src.draft_import.main.notion')
+    def test_recover_status_after_report_append(self, notion):
+        blocks = [block('heading_2', '원고 제출'),
+                  block('heading_2', '자동 검수 결과'),
+                  block('paragraph', '검수 결과: 형식 검사 통과(사람 검수 필요)')]
+        with patch.object(di, 'get_blocks', return_value=blocks), patch.dict(os.environ, {'DRY_RUN': 'false'}):
+            self.assertEqual(di.process(page()), 'recovered')
+        self.assertEqual(notion.call_count, 1)
+        self.assertEqual(notion.call_args_list[0].args[:2], ('PATCH', '/pages/page-1'))
+        self.assertEqual(notion.call_args_list[0].kwargs['json']['properties']['집필 요청 상태']['select']['name'], 'DRAFT_IMPORTED')
+
+    @patch('src.draft_import.main.notion')
     def test_failed_qa_marks_review(self, notion):
         blocks = [block('heading_2', '원고 제출'), block('paragraph', '짧은 글')]
         with patch.object(di, 'get_blocks', return_value=blocks), patch.dict(os.environ, {'DRY_RUN': 'false'}):
