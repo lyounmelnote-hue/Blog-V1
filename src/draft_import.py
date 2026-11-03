@@ -58,7 +58,7 @@ def extract_draft(blocks):
 
     for block in blocks:
         kind, text = block.get('type', ''), block_text(block).strip()
-        normalized = re.sub(r'^#{1,6}\\s*', '', text).strip()
+        normalized = re.sub(r'^#{1,6}\s*', '', text).strip()
         if kind in ('heading_1', 'heading_2', 'heading_3') and normalized == START:
             if capturing:
                 raise ValueError('원고 제출 섹션 중복')
@@ -68,7 +68,7 @@ def extract_draft(blocks):
             break
         if capturing:
             append_block(block)
-    draft = '\\n\\n'.join(lines).strip()
+    draft = '\n\n'.join(lines).strip()
     if len(draft) > 100000:
         raise ValueError('원고가 최대 글자 수를 초과함')
     return draft
