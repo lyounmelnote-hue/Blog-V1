@@ -111,12 +111,14 @@ def process(page):
 def run():
     pages = main.query(DAILY, {'property': '상태', 'select': {'equals': '선택'}}, 50)
     errors = []
-    for page in pages[:5]:
+    print('SELECTED_SCAN', len(pages), 'dry_run=', DRY())
+    for page in pages:
         try:
             process(page)
         except Exception as exc:
-            print('ERROR', page['id'], type(exc).__name__)
+            print('ERROR', page['id'], type(exc).__name__, str(exc))
             errors.append(page['id'])
+    print('SELECTED_SCAN_COMPLETE', 'examined=', len(pages), 'errors=', len(errors))
     if errors:
         raise RuntimeError(f'Failed to prepare {len(errors)} prompt packets')
 
