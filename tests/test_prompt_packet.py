@@ -14,8 +14,8 @@ class PromptPacketTests(unittest.TestCase):
         text = prompt('가을 산책', '일상', '걷기', [('공식자료', 'https://example.org')])
         self.assertIn('이미지 생성 프롬프트 (총 3장', text)
         self.assertIn('https://example.org', text)
-    def test_unsafe_rejected(self):
+    def test_human_selected_overrides_automatic_caution(self):
         page={'properties':{'상태':{'select':{'name':'선택'}},'논란도':{'select':{'name':'주의'}},'신빙성':{'select':{'name':'안전'}},'불쾌도':{'select':{'name':'안전'}},'근거 출처':{'relation':[{'id':'1'}]}}}
-        self.assertFalse(eligible(page)[0])
+        self.assertTrue(eligible(page)[0])
 
 if __name__=='__main__': unittest.main()
