@@ -1,3 +1,9 @@
+## v4.4 성과 검증
+
+GitHub Actions의 **Editorial performance review v4.4**를 수동 실행합니다. 기존 일정은 변경하지 않습니다. `BLOG_CONTENT`의 `상태=PUBLISHED`, `실제 발행일`과 `BLOG_ANALYTICS`의 `콘텐츠` 관계·`측정일`·누적 `조회수`를 입력한 경우에만 성과 비교에 포함합니다. 발행 후 7일 경과한 콘텐츠 중 최초 7일 이내의 최신 측정치를 사용하며, 5건 미만이면 상관 분석을 보류합니다. 실행 결과는 GitHub Actions Artifacts의 `editorial-performance-v4.4`에서 CSV/JSON으로 확인합니다. 분석은 읽기 전용이며 자동 가중치 조정·자동 발행은 하지 않습니다.
+
+---
+
 ## v4.3.1 — 기존 추천 점수 소급 재평가
 
 GitHub Actions → **Historical recommendation score backfill v4.3.1** → Run workflow.
