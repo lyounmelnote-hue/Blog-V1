@@ -33,7 +33,7 @@ def extract_draft(blocks):
     capturing, lines = False, []
     allowed = ('paragraph', 'heading_1', 'heading_2', 'heading_3',
                'bulleted_list_item', 'numbered_list_item', 'quote',
-               'to_do', 'code', 'divider')
+               'to_do', 'code', 'divider', 'table', 'table_row', 'image', 'bookmark', 'callout')
 
     def append_block(block, depth=0, ancestry=()):
         if depth > 8:
@@ -41,6 +41,29 @@ def extract_draft(blocks):
         kind = block.get('type', '')
         if kind not in allowed:
             raise ValueError(f'지원하지 않는 원고 블록: {kind}')
+        if kind == 'table_row':
+            cells = block.get('table_row', {}).get('cells', [])
+            values = [''.join(part.get('plain_text', part.get('text', {}).get('content', ''))
+                              for part in cell).replace('|', r'\\|').replace('\\n', ' ')
+                      for cell in cells]
+            if values:
+                lines.append('| ' + ' | '.join(values) + ' |')
+            return
+        if kind == 'table':
+            block_id = block.get('id')
+            if not block_id:
+                raise ValueError('표 블록 ID 누락')
+            children = get_blocks(block_id)
+            if not children:
+                raise ValueError('표 행이 없는 원고 표')
+            for index, child in enumerate(children):
+                if child.get('type') != 'table_row':
+                    raise ValueError('표 내부에 예상하지 못한 블록')
+                append_block(child, depth + 1, ancestry + (block_id,))
+                if index == 0 and block.get('table', {}).get('has_column_header'):
+                    count = len(child.get('table_row', {}).get('cells', []))
+                    lines.append('| ' + ' | '.join(['---'] * count) + ' |')
+            return
         text = block_text(block).strip()
         if text:
             prefix = {'heading_1': '# ', 'heading_2': '## ',
