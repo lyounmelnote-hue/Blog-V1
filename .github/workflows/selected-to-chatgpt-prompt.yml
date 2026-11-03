@@ -1,4 +1,4 @@
-name: Selected recommendation to ChatGPT prompt v3.3
+name: Selected recommendation to ChatGPT prompt v3.9
 on:
   workflow_dispatch:
     inputs:
@@ -7,9 +7,8 @@ on:
         type: boolean
         required: true
         default: true
-  # schedule disabled until integration test
-  # schedule:
-  # - cron: '7,17,27,37,47,57 * * * *'
+  schedule:
+    - cron: '3,18,33,48 * * * *' # every 15 minutes, UTC
 permissions:
   contents: read
 concurrency:
@@ -23,12 +22,14 @@ jobs:
       NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
       NOTION_DAILY_DS: '13615add-6aef-417c-b1f7-ca93217f4cea'
       NOTION_CONTENT_DS: 'b2ace958-aa15-4105-973b-5fb1af090ec3'
-      DRY_RUN: ${{ github.event_name == 'schedule' && 'true' || inputs.dry_run }}
+      DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || inputs.dry_run }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
       - run: pip install -r requirements.txt
       - run: python -m unittest discover -s tests -v
-      - run: python -m src.prompt_packet
+      - name: Selected recommendation processing
+        run: python -m src.prompt_packet
