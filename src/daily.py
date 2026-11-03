@@ -8,6 +8,7 @@ from datetime import datetime, timezone, timedelta
 from collections import Counter
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 from .main import notion, query, request, rich, textprop, SOURCES, CONTENT, KEYWORDS, save_log
+from . import editorial_score
 
 DAILY = os.getenv('NOTION_DAILY_DS', '13615add-6aef-417c-b1f7-ca93217f4cea')
 CATEGORIES = ['문화', '일상', '생활정보팁', '건강', '핫뉴스']
@@ -42,7 +43,7 @@ def search(query_text, endpoint='news', count=10):
        params={'query':query_text,'display':count,'sort':'date' if endpoint=='news' else 'sim'})
     return [{'title':clean(x.get('title')),'summary':clean(x.get('description')),
              'url':x.get('originallink') or x.get('link') or '',
-             'publisher_url':x.get('link') or ''} for x in data.get('items', [])]
+             'publisher_url':x.get('link') or '', 'published_at':x.get('pubDate') or ''} for x in data.get('items', [])]
 
 
 def curated_sources():
@@ -122,6 +123,23 @@ def queue_shortlist(candidates, limit=2):
     return selected, rejected
 
 
+def blog_result_count(phrase):
+    """Naver blog result TOTAL: interest/supply proxy, NOT actual search volume."""
+    data = request('GET', 'https://openapi.naver.com/v1/search/blog.json',
+       headers={'X-Naver-Client-Id':os.environ['NAVER_CLIENT_ID'],
+                'X-Naver-Client-Secret':os.environ['NAVER_CLIENT_SECRET']},
+       params={'query':phrase,'display':1,'sort':'sim'})
+    return data.get('total')
+
+
+def ranked_review_shortlist(candidates, limit=2):
+    """Existing safety filter remains mandatory; ranking never bypasses it."""
+    eligible, rejected = queue_shortlist(candidates, limit=len(candidates))
+    # Cap extra API calls at 12 per category to bound rate and latency.
+    ranked = editorial_score.rank(eligible[:12], blog_result_count, top=limit)
+    return ranked, rejected
+
+
 def create_unverified_source(item):
     """Article URL is a research lead, NOT a verified supporting citation."""
     props = {
@@ -146,10 +164,11 @@ def save_review_candidate(date, category, slot, item, run_id, source_id):
         '신빙성': {'select': {'name': '주의'}},
         '불쾌도': {'select': {'name': '주의'}},
         '상태': {'select': {'name': '보류'}},
+        '추천 점수': {'number': item.get('editorial_score', {}).get('total', 0)},
         '실행 ID': {'rich_text': rich(run_id)},
         '원본 링크': {'url': item['url']},
         '근거 출처': {'relation': [{'id': source_id}]},
-        '검증 메모': {'rich_text': rich('검증 대기: 자동 수집된 기사이며 출처는 UNVERIFIED. 원문·공식 근거를 사람이 확인하고 검증 상태를 변경해야 합니다.')},
+        '검증 메모': {'rich_text': rich('검증 대기: 출처 UNVERIFIED, 원문 확인 필요. ' + json.dumps(item.get('editorial_score', {}), ensure_ascii=False)[:1300])},
     }
     return notion('POST', '/pages', safe_retry=False, json={
         'parent': {'type': 'data_source_id', 'data_source_id': DAILY},
@@ -271,8 +290,8 @@ def run():
         candidates = dedupe_candidates(candidates, used_urls)
         print('DEDUP_FILTER', json.dumps({'category': category, 'removed': before_dedupe-len(candidates)}, ensure_ascii=False))
         if review_queue:
-            queued,rejected=queue_shortlist(candidates)
-            accepted=[(0,item,[]) for item in queued]
+            queued,rejected=ranked_review_shortlist(candidates)
+            accepted=[(item['editorial_score']['total'],item,[]) for item in queued]
         else:
             accepted,rejected=shortlist(category,candidates,sources)
         summary[category]={'selected':len(accepted),'rejected':len(rejected),'missing':2-len(accepted),
@@ -280,7 +299,7 @@ def run():
         print('GATE_DIAGNOSTICS', json.dumps({'category':category, 'counts':rejection_report(rejected)}, ensure_ascii=False))
         # A previous partial run is skipped above; this run may create up to two rows.
         for i,(score,item,evidence) in enumerate(accepted):
-            print('REVIEW_QUEUE' if review_queue else 'SELECT', category, index*2+i+1, item['title'])
+            print('REVIEW_QUEUE' if review_queue else 'SELECT', category, index*2+i+1, score, item['title'])
             if not dry:
                 if review_queue:
                     source = create_unverified_source(item)
