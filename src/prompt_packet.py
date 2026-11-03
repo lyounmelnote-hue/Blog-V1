@@ -84,6 +84,11 @@ def process(page):
         main.notion('PATCH', f"/pages/{page['id']}", json={'properties': {'상태': {'select': {'name': '제작중'}}, '연결 글': {'relation': [{'id': found[0]['id']}]}}})
         return 'recovered'
     blocks = main.blocks(text)
+    # v4.1: a dedicated section for human-pasted ChatGPT output.
+    blocks.append({'object': 'block', 'type': 'heading_2',
+                   'heading_2': {'rich_text': main.rich('원고 제출')}})
+    if len(blocks) > 100:
+        raise ValueError('프롬프트 블록 수가 Notion 생성 한도를 초과함')
     content = main.notion('POST', '/pages', safe_retry=False, json={
         'parent': {'type': 'data_source_id', 'data_source_id': main.CONTENT},
         'properties': {
