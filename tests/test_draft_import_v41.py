@@ -23,6 +23,24 @@ class DraftImportTests(unittest.TestCase):
                   block('paragraph', 'old QA')]
         self.assertEqual(di.extract_draft(blocks), '소제목\n\n작성된 원고')
 
+    def test_nested_list_import(self):
+        parent = block('bulleted_list_item', '부모 항목')
+        parent['id'] = 'nested-parent'
+        parent['has_children'] = True
+        children = [block('bulleted_list_item', '하위 항목'),
+                    block('paragraph', '하위 설명')]
+        with patch.object(di, 'get_blocks', return_value=children):
+            draft = di.extract_draft([block('heading_2', '원고 제출'), parent])
+        self.assertIn('부모 항목', draft)
+        self.assertIn('하위 항목', draft)
+        self.assertIn('하위 설명', draft)
+
+    def test_nested_block_without_id_rejected(self):
+        parent = block('bulleted_list_item', '항목')
+        parent['has_children'] = True
+        with self.assertRaisesRegex(ValueError, '하위 블록 ID 누락'):
+            di.extract_draft([block('heading_2', '원고 제출'), parent])
+
     def test_empty_submission_waits(self):
         with patch.object(di, 'get_blocks', return_value=[block('paragraph', 'old prompt')]):
             self.assertEqual(di.process(page()), 'waiting')
