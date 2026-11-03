@@ -19,22 +19,21 @@ def candidate(state='선택', rating='안전', linked=False):
 
 
 class V39Tests(unittest.TestCase):
-    def test_only_selected_safe_unlinked(self):
+    def test_only_selected_approved_unlinked(self):
         self.assertTrue(pp.eligible(candidate())[0])
         self.assertFalse(pp.eligible(candidate(state='보류'))[0])
-        self.assertFalse(pp.eligible(candidate(rating='주의'))[0])
+        self.assertTrue(pp.eligible(candidate(rating='주의'))[0])
         self.assertFalse(pp.eligible(candidate(linked=True))[0])
 
     @patch('src.prompt_packet.main.notion')
-    def test_unverified_source_rejected(self, notion):
+    def test_unverified_source_allowed_after_human_approval(self, notion):
         notion.return_value = {'properties': {'검증 상태': {'select': {'name': 'UNVERIFIED'}}, 'URL': {'url': 'https://example.org'}}}
-        with self.assertRaisesRegex(ValueError, '검증되지 않은 출처'):
-            pp.source_details(candidate())
+        self.assertEqual(pp.source_details(candidate())[0][1], 'https://example.org')
 
     @patch('src.prompt_packet.main.notion')
     def test_missing_source_url_rejected(self, notion):
         notion.return_value = {'properties': {'검증 상태': {'select': {'name': 'VERIFIED'}}, 'URL': {'url': None}}}
-        with self.assertRaisesRegex(ValueError, '출처 URL 없음'):
+        with self.assertRaisesRegex(ValueError, '유효한 출처 URL 없음'):
             pp.source_details(candidate())
 
     @patch('src.prompt_packet.main.notion')
