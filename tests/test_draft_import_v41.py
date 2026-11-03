@@ -60,7 +60,7 @@ class DraftImportTests(unittest.TestCase):
         notion.assert_not_called()
 
     def test_existing_report_is_not_duplicated(self):
-        with patch.object(di, 'get_blocks', return_value=[block('heading_2', '자동 검수 결과')]):
+        with patch.object(di, 'get_blocks', return_value=[block('heading_2', '자동 검수 결과')]), patch.dict(os.environ, {'DRY_RUN': 'true'}):
             self.assertEqual(di.process(page()), 'skipped')
 
     @patch('src.draft_import.main.notion')
