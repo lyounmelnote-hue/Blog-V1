@@ -21,7 +21,7 @@ class DraftImportTests(unittest.TestCase):
                   block('paragraph', '작성된 원고'),
                   block('heading_2', '자동 검수 결과'),
                   block('paragraph', 'old QA')]
-        self.assertEqual(di.extract_draft(blocks), '소제목\n\n작성된 원고')
+        self.assertEqual(di.extract_draft(blocks), '## 소제목\n\n작성된 원고')
 
     def test_nested_list_import(self):
         parent = block('bulleted_list_item', '부모 항목')
