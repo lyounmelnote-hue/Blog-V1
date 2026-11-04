@@ -139,7 +139,7 @@ def report_blocks(result):
 def process(page):
     page_id = page['id']
     props = page.get('properties', {})
-    if (props.get('집필 요청 상태', {}).get('select') or {}).get('name') != 'PROMPT_READY':
+    if (props.get('집필 요청 상태', {}).get('select') or {}).get('name') != '집필 준비 완료':
         return 'skipped'
     blocks = get_blocks(page_id)
     report_indices = [i for i, b in enumerate(blocks)
@@ -150,11 +150,11 @@ def process(page):
         print('IMPORT_REPORT_EXISTS', page_id)
         if not DRY():
             tail = ' '.join(block_text(b) for b in blocks[report_indices[-1] + 1:])
-            recovered = 'DRAFT_IMPORTED' if '형식 검사 통과(사람 검수 필요)' in tail else 'NEEDS_REVIEW'
+            recovered = '원고 등록 완료' if '형식 검사 통과(사람 검수 필요)' in tail else '검토 필요'
             main.notion('PATCH', f'/pages/{page_id}', json={'properties': {
                 '집필 요청 상태': {'select': {'name': recovered}},
-                '상태': {'select': {'name': 'REVIEW'}},
-                '파이프라인 단계': {'select': {'name': 'REVIEW'}},
+                '상태': {'select': {'name': '검토 중'}},
+                '파이프라인 단계': {'select': {'name': '검토 중'}},
                 '검수 승인': {'checkbox': False}
             }})
             return 'recovered'
@@ -172,11 +172,11 @@ def process(page):
     # Preserve the draft and prompt. Append QA first; reruns never append twice.
     main.notion('PATCH', f'/blocks/{page_id}/children', safe_retry=False,
                 json={'children': report_blocks(result)})
-    state = 'DRAFT_IMPORTED' if result['passed'] else 'NEEDS_REVIEW'
+    state = '원고 등록 완료' if result['passed'] else '검토 필요'
     main.notion('PATCH', f'/pages/{page_id}', json={'properties': {
         '집필 요청 상태': {'select': {'name': state}},
-        '상태': {'select': {'name': 'REVIEW'}},
-        '파이프라인 단계': {'select': {'name': 'REVIEW'}},
+        '상태': {'select': {'name': '검토 중'}},
+        '파이프라인 단계': {'select': {'name': '검토 중'}},
         '검수 승인': {'checkbox': False},
         '원고 버전': {'number': 1},
         '검증 메모': {'rich_text': main.rich(
@@ -189,7 +189,7 @@ def process(page):
 def run():
     pages = main.query(CONTENT,
                        {'property': '집필 요청 상태',
-                        'select': {'equals': 'PROMPT_READY'}}, 100)
+                        'select': {'equals': '집필 준비 완료'}}, 100)
     errors = []
     for page in pages:
         try:
