@@ -134,7 +134,7 @@ def naver_search(keyword):
 
 
 def verified_sources():
-    rows = query(SOURCES, {'property': '검증 상태', 'select': {'equals': 'VERIFIED'}}, 100)
+    rows = query(SOURCES, {'property': '검증 상태', 'select': {'equals': '검증 완료'}}, 100)
     sources = []
     for page in rows:
         prop = page.get('properties', {})
@@ -157,8 +157,8 @@ def save_draft(keyword_id, draft, run_id):
         'properties': {
             '제목': {'title': rich(draft['title'][:150])},
             '키워드': {'relation': [{'id': keyword_id}]},
-            '상태': {'select': {'name': 'REVIEW'}},
-            '파이프라인 단계': {'select': {'name': 'REVIEW'}},
+            '상태': {'select': {'name': '검토 중'}},
+            '파이프라인 단계': {'select': {'name': '검토 중'}},
             '검수 승인': {'checkbox': False},
             '고유 요소 체크': {'checkbox': False},
             '원고 버전': {'number': 1},
