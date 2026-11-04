@@ -9,7 +9,7 @@ def rt(s):
     return [{'plain_text': s}]
 
 
-def content(cid='c1', status='PUBLISHED', pub='2026-10-20', rec='r1'):
+def content(cid='c1', status='발행 완료', pub='2026-10-20', rec='r1'):
     return {'id':cid,'properties':{
         '제목': {'title':rt('테스트 게시글')},
         '상태': {'select':{'name':status}},
