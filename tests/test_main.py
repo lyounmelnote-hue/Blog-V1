@@ -36,7 +36,7 @@ class PipelineTests(unittest.TestCase):
         with patch.dict(os.environ, {'OPENAI_MODEL': 'test'}):
             main.save_draft('kw-1', {'title': '제목', 'body': '본문'}, 'run-1')
         self.assertFalse(notion.call_args.kwargs['safe_retry'])
-        self.assertEqual(notion.call_args.kwargs['json']['properties']['상태']['select']['name'], 'REVIEW')
+        self.assertEqual(notion.call_args.kwargs['json']['properties']['상태']['select']['name'], '검토 중')
 
 if __name__ == '__main__':
     unittest.main()
