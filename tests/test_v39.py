@@ -27,12 +27,12 @@ class V39Tests(unittest.TestCase):
 
     @patch('src.prompt_packet.main.notion')
     def test_unverified_source_allowed_after_human_approval(self, notion):
-        notion.return_value = {'properties': {'검증 상태': {'select': {'name': 'UNVERIFIED'}}, 'URL': {'url': 'https://example.org'}}}
+        notion.return_value = {'properties': {'검증 상태': {'select': {'name': '미검증'}}, 'URL': {'url': 'https://example.org'}}}
         self.assertEqual(pp.source_details(candidate())[0][1], 'https://example.org')
 
     @patch('src.prompt_packet.main.notion')
     def test_missing_source_url_rejected(self, notion):
-        notion.return_value = {'properties': {'검증 상태': {'select': {'name': 'VERIFIED'}}, 'URL': {'url': None}}}
+        notion.return_value = {'properties': {'검증 상태': {'select': {'name': '검증 완료'}}, 'URL': {'url': None}}}
         with self.assertRaisesRegex(ValueError, '유효한 출처 URL 없음'):
             pp.source_details(candidate())
 
@@ -42,7 +42,7 @@ class V39Tests(unittest.TestCase):
         page = candidate()
         query.return_value = []
         notion.side_effect = [
-            {'properties': {'검증 상태': {'select': {'name': 'VERIFIED'}}, 'URL': {'url': 'https://example.org'}, '자료명': {'title': [{'plain_text': '검증 자료'}]}}},
+            {'properties': {'검증 상태': {'select': {'name': '검증 완료'}}, 'URL': {'url': 'https://example.org'}, '자료명': {'title': [{'plain_text': '검증 자료'}]}}},
             {'id': 'new-content'},
             {},
         ]
@@ -52,8 +52,8 @@ class V39Tests(unittest.TestCase):
         self.assertEqual(len(create), 1)
         properties = create[0].kwargs['json']['properties']
         self.assertEqual(properties['이미지 프롬프트 수']['number'], 3)
-        self.assertEqual(properties['집필 요청 상태']['select']['name'], 'PROMPT_READY')
-        self.assertEqual(properties['집필 방식']['select']['name'], 'CHATGPT_PROJECT')
+        self.assertEqual(properties['집필 요청 상태']['select']['name'], '집필 준비 완료')
+        self.assertEqual(properties['집필 방식']['select']['name'], 'ChatGPT 프로젝트')
         self.assertFalse(properties['검수 승인']['checkbox'])
         self.assertFalse(pp.eligible(candidate(linked=True))[0])
 
@@ -61,14 +61,14 @@ class V39Tests(unittest.TestCase):
     @patch('src.prompt_packet.main.query')
     def test_recover_existing_content(self, query, notion):
         query.return_value = [{'id': 'already-exists'}]
-        notion.return_value = {'properties': {'검증 상태': {'select': {'name': 'VERIFIED'}}, 'URL': {'url': 'https://example.org'}, '자료명': {'title': [{'plain_text': '검증 자료'}]}}}
+        notion.return_value = {'properties': {'검증 상태': {'select': {'name': '검증 완료'}}, 'URL': {'url': 'https://example.org'}, '자료명': {'title': [{'plain_text': '검증 자료'}]}}}
         with patch.dict(os.environ, {'DRY_RUN': 'false'}):
             self.assertEqual(pp.process(candidate()), 'recovered')
         self.assertFalse(any(c.args[:2] == ('POST', '/pages') for c in notion.call_args_list))
 
     @patch('src.prompt_packet.main.notion')
     def test_dry_run_no_writes(self, notion):
-        notion.return_value = {'properties': {'검증 상태': {'select': {'name': 'VERIFIED'}}, 'URL': {'url': 'https://example.org'}, '자료명': {'title': [{'plain_text': '검증 자료'}]}}}
+        notion.return_value = {'properties': {'검증 상태': {'select': {'name': '검증 완료'}}, 'URL': {'url': 'https://example.org'}, '자료명': {'title': [{'plain_text': '검증 자료'}]}}}
         with patch.dict(os.environ, {'DRY_RUN': 'true'}):
             self.assertEqual(pp.process(candidate()), 'preview')
         self.assertTrue(all(c.args[0] == 'GET' for c in notion.call_args_list))
