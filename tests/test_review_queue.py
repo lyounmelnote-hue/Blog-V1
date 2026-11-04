@@ -15,7 +15,7 @@ class ReviewQueueTests(unittest.TestCase):
         with patch.object(daily,'notion',return_value={'id':'source-id'}) as api:
             daily.create_unverified_source(item)
             p=api.call_args.kwargs['json']['properties']
-            self.assertEqual(p['검증 상태']['select']['name'],'UNVERIFIED')
+            self.assertEqual(p['검증 상태']['select']['name'],'미검증')
             self.assertFalse(p['원문 확인 여부']['checkbox'])
     def test_candidate_never_auto_safe(self):
         item={'title':'문화 행사 정보','summary':'행사 일정','url':'https://example.com/a'}
