@@ -10,7 +10,7 @@ def block(kind, value):
 
 def page():
     return {'id': 'page-1', 'properties': {
-        '집필 요청 상태': {'select': {'name': 'PROMPT_READY'}}}}
+        '집필 요청 상태': {'select': {'name': '집필 준비 완료'}}}}
 
 
 class DraftImportTests(unittest.TestCase):
@@ -84,7 +84,7 @@ class DraftImportTests(unittest.TestCase):
             self.assertEqual(di.process(page()), 'imported')
         self.assertEqual(notion.call_count, 2)
         self.assertEqual(notion.call_args_list[0].args[:2], ('PATCH', '/blocks/page-1/children'))
-        self.assertEqual(notion.call_args_list[1].kwargs['json']['properties']['집필 요청 상태']['select']['name'], 'DRAFT_IMPORTED')
+        self.assertEqual(notion.call_args_list[1].kwargs['json']['properties']['집필 요청 상태']['select']['name'], '원고 등록 완료')
         self.assertFalse(notion.call_args_list[1].kwargs['json']['properties']['검수 승인']['checkbox'])
 
     @patch('src.draft_import.main.notion')
@@ -108,14 +108,14 @@ class DraftImportTests(unittest.TestCase):
             self.assertEqual(di.process(page()), 'recovered')
         self.assertEqual(notion.call_count, 1)
         self.assertEqual(notion.call_args_list[0].args[:2], ('PATCH', '/pages/page-1'))
-        self.assertEqual(notion.call_args_list[0].kwargs['json']['properties']['집필 요청 상태']['select']['name'], 'DRAFT_IMPORTED')
+        self.assertEqual(notion.call_args_list[0].kwargs['json']['properties']['집필 요청 상태']['select']['name'], '원고 등록 완료')
 
     @patch('src.draft_import.main.notion')
     def test_failed_qa_marks_review(self, notion):
         blocks = [block('heading_2', '원고 제출'), block('paragraph', '짧은 글')]
         with patch.object(di, 'get_blocks', return_value=blocks), patch.dict(os.environ, {'DRY_RUN': 'false'}):
             self.assertEqual(di.process(page()), 'needs_review')
-        self.assertEqual(notion.call_args_list[-1].kwargs['json']['properties']['집필 요청 상태']['select']['name'], 'NEEDS_REVIEW')
+        self.assertEqual(notion.call_args_list[-1].kwargs['json']['properties']['집필 요청 상태']['select']['name'], '검토 필요')
 
     def test_pagination(self):
         with patch('src.draft_import.main.notion', side_effect=[

@@ -47,7 +47,7 @@ def search(query_text, endpoint='news', count=10):
 
 
 def curated_sources():
-    rows = query(SOURCES, {'property':'검증 상태','select':{'equals':'VERIFIED'}}, page_size=100)
+    rows = query(SOURCES, {'property':'검증 상태','select':{'equals':'검증 완료'}}, page_size=100)
     output=[]
     for p in rows:
         props=p.get('properties',{})
@@ -145,7 +145,7 @@ def create_unverified_source(item):
     props = {
         '자료명': {'title': rich(item['title'][:150])},
         'URL': {'url': item['url']},
-        '검증 상태': {'select': {'name': 'UNVERIFIED'}},
+        '검증 상태': {'select': {'name': '미검증'}},
         '원문 확인 여부': {'checkbox': False},
     }
     return notion('POST', '/pages', safe_retry=False, json={

@@ -92,22 +92,22 @@ def process(page):
     content = main.notion('POST', '/pages', safe_retry=False, json={
         'parent': {'type': 'data_source_id', 'data_source_id': main.CONTENT},
         'properties': {
-            '제목': {'title': main.rich(title)}, '상태': {'select': {'name': 'QUEUED'}},
+            '제목': {'title': main.rich(title)}, '상태': {'select': {'name': '대기'}},
             '분야': {'select': {'name': category}},
             '일일 추천': {'relation': [{'id': page['id']}]},
-            '집필 방식': {'select': {'name': 'CHATGPT_PROJECT'}},
-            '집필 요청 상태': {'select': {'name': 'PROMPT_READY'}},
+            '집필 방식': {'select': {'name': 'ChatGPT 프로젝트'}},
+            '집필 요청 상태': {'select': {'name': '집필 준비 완료'}},
             '이미지 프롬프트 수': {'number': 3},
             'ChatGPT 프로젝트 URL': {'url': PROJECT_URL},
             '검수 승인': {'checkbox': False},
-            '파이프라인 단계': {'select': {'name': 'QUEUED'}},
+            '파이프라인 단계': {'select': {'name': '대기'}},
         }, 'children': blocks})
     main.notion('PATCH', f"/pages/{page['id']}", json={'properties': {
         '상태': {'select': {'name': '제작중'}},
         '연결 글': {'relation': [{'id': content['id']}]},
         '검증 메모': {'rich_text': main.rich('집필 프롬프트 준비 완료. 콘텐츠 페이지의 프롬프트를 복사해 ChatGPT 프로젝트에서 새 채팅으로 실행하세요.')}
     }})
-    print('PROMPT_READY', content['id'])
+    print('집필 준비 완료', content['id'])
     return 'created'
 
 

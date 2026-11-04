@@ -77,7 +77,7 @@ def report(contents, analytics, recommendations, as_of=None, min_age_days=7):
         content_id = content['id']
         published = day(content, '실제 발행일')
         score, reason = score_from_recommendations(content, rec_by_id)
-        if state(content) != 'PUBLISHED' or not published:
+        if state(content) != '발행 완료' or not published:
             reason = '미발행 또는 실제 발행일 누락'
         elif (today - published).days < min_age_days:
             reason = '발행 후 관찰 기간 부족'

@@ -31,7 +31,7 @@ def evidence_verified(page):
     for source_id in ids:
         source = main.notion("GET", f"/pages/{source_id}")
         status = (source.get("properties", {}).get("검증 상태", {}).get("select") or {}).get("name")
-        if status != "VERIFIED":
+        if status != "검증 완료":
             return False
     return True
 

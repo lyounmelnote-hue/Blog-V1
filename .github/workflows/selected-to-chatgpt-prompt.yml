@@ -8,7 +8,7 @@ on:
         required: true
         default: true
   schedule:
-    - cron: '3 * * * *' # Every 60 minutes, at HH:03 UTC
+    - cron: '3,18,33,48 * * * *' # Every 15 minutes, UTC HH:03/18/33/48
 permissions:
   contents: read
 concurrency:
