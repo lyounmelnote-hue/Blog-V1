@@ -1,0 +1,50 @@
+name: v4.5.2 integration dry-run (read only)
+on:
+  workflow_dispatch:
+    inputs:
+      recommend_date:
+        description: 'KST date YYYY-MM-DD; blank means today'
+        required: false
+        type: string
+        default: ''
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+      NOTION_DAILY_DS: '13615add-6aef-417c-b1f7-ca93217f4cea'
+      NOTION_SOURCES_DS: '51596cf1-d049-472d-9689-8048f527ab41'
+      NOTION_LOGS_DS: '25735bf7-9a91-4d0a-a596-d867d9c66447'
+      REVIEW_QUEUE: 'true'
+      DRY_RUN: 'true'
+      RECOMMEND_DATE: ${{ inputs.recommend_date }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Verify read-only mode and run live source queries
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$DRY_RUN" = "true"
+          test "$REVIEW_QUEUE" = "true"
+          mkdir -p integration-report
+          python -m src.daily 2>&1 | tee integration-report/dry-run.log
+      - name: Upload diagnostics (may contain article titles and URLs)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v452-integration-dryrun
+          path: integration-report/
+          if-no-files-found: warn
+          retention-days: 7
