@@ -1,5 +1,5 @@
 import unittest
-from src.topic_dedupe import tokens, canonical_url, duplicate_match, filter_duplicates, historical_rows
+from src.topic_dedupe import tokens, canonical_url, duplicate_match, filter_duplicates, historical_rows, semantic_topic_match
 
 def row(title,url="https://news.example/a",day="2026-11-04"):
     return {"id":"prior-1","properties":{"후보 제목":{"title":[{"plain_text":title}]},"원본 링크":{"url":url},"추천일":{"date":{"start":day}}}}
@@ -26,6 +26,18 @@ class TopicDedupeTests(unittest.TestCase):
         historical_rows(query,"DS","2026-11-05")
         self.assertEqual(calls[0]["and"][0]["date"]["on_or_after"],"2026-10-29")
         self.assertEqual(calls[0]["and"][1]["date"]["before"],"2026-11-05")
+    def test_semantic_same_policy_different_headline(self):
+        self.assertTrue(semantic_topic_match(
+            "고혈압 당뇨 관리 전국 확대 통합센터 운영",
+            "고혈압 당뇨 관리 확대 전국 통합센터 시행"))
+    def test_distinct_guides_with_shared_keyword(self):
+        self.assertFalse(semantic_topic_match(
+            "정부24 주민등록등본 발급 방법 정리",
+            "정부24 전입신고 신청 방법 안내"))
+    def test_blog_fit_rewards_howto(self):
+        from src.editorial_score import blog_fit
+        self.assertGreater(blog_fit({'title':'난방비 절약 보일러 사용법 정리'}),
+                           blog_fit({'title':'지역 기념식 축사 기념행사 성료'}))
     def test_bad_url(self):
         self.assertEqual(canonical_url("javascript:alert(1)"),"")
     def test_not_approved_by_dedupe(self):
