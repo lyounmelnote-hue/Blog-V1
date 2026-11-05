@@ -16,7 +16,7 @@ class EditorialScoreTests(unittest.TestCase):
         self.assertGreaterEqual(result['total'], 0)
         self.assertLessEqual(result['total'], 100)
         self.assertEqual(set(result['parts']), {
-            '검색관심도_대리지표', '시의성', '실용성', 'SEO_적합성', '차별성'})
+            '검색관심도_대리지표', '시의성', '실용성', 'SEO_적합성', '차별성', '블로그_적합성'})
 
     def test_search_proxy_is_not_actual_volume(self):
         self.assertEqual(es.demand(None), 10)
