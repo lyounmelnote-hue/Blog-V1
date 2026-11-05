@@ -43,7 +43,7 @@ def search(query_text, endpoint='news', count=10):
        params={'query':query_text,'display':count,'sort':'date' if endpoint=='news' else 'sim'})
     return [{'title':clean(x.get('title')),'summary':clean(x.get('description')),
              'url':x.get('originallink') or x.get('link') or '',
-             'publisher_url':x.get('link') or '', 'published_at':x.get('pubDate') or ''} for x in data.get('items', [])]
+             'publisher_url':x.get('link') or '', 'published_at':x.get('pubDate') or (x.get('postdate', '')[:4] + '-' + x.get('postdate', '')[4:6] + '-' + x.get('postdate', '')[6:8] if re.fullmatch(r'\d{8}', x.get('postdate', '')) else '')} for x in data.get('items', [])]
 
 
 def curated_sources():
