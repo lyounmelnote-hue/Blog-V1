@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 from collections import Counter
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 from .main import notion, query, request, rich, textprop, SOURCES, CONTENT, KEYWORDS, save_log
-from . import editorial_score
+from . import editorial_score, topic_dedupe
 
 DAILY = os.getenv('NOTION_DAILY_DS', '13615add-6aef-417c-b1f7-ca93217f4cea')
 CATEGORIES = ['문화', '일상', '생활정보팁', '건강', '핫뉴스']
@@ -275,6 +275,9 @@ def run():
     day_rows = existing_day_rows(date)
     category_counts = existing_category_counts(day_rows)
     used_urls = existing_day_urls(day_rows)
+    in_run_topics = []
+    history = topic_dedupe.historical_rows(query, DAILY, date, days=7)
+    print('HISTORY_DEDUP', json.dumps({'lookback_days':7,'rows':len(history)}, ensure_ascii=False))
     print('DEDUP_DIAGNOSTICS', json.dumps({'date': date, 'existing_rows': len(day_rows), 'categories': dict(category_counts), 'existing_urls': len(used_urls)}, ensure_ascii=False))
     print('SOURCE_DIAGNOSTICS', json.dumps(source_report(sources), ensure_ascii=False))
     for index,category in enumerate(CATEGORIES):
@@ -288,6 +291,16 @@ def run():
             candidates.extend(search(seed,'news',8))
         before_dedupe = len(candidates)
         candidates = dedupe_candidates(candidates, used_urls)
+        candidates, duplicate_records = topic_dedupe.filter_duplicates(candidates, history + day_rows)
+        # Also exclude duplicate topics already accepted in earlier categories of this run.
+        candidates, cross_category_duplicates = topic_dedupe.filter_duplicates(candidates, in_run_topics)
+        duplicate_records += cross_category_duplicates
+        print('TOPIC_DEDUP', json.dumps({'category':category,'duplicates':len(duplicate_records),'reasons':dict(Counter(x['type'] for _,x in duplicate_records))},ensure_ascii=False))
+        if duplicate_records and not dry:
+            # Separate audit trail in existing LOGS database; never create a recommendation row.
+            for duplicate_item, match in duplicate_records:
+                save_log('중복 소재: '+duplicate_item['title'][:90],run_id,'RESEARCH','SKIPPED',
+                         json.dumps({'version':'v4.5.2','type':match['type'],'prior_id':match['prior_id'],'prior_date':match['prior_date']},ensure_ascii=False))
         print('DEDUP_FILTER', json.dumps({'category': category, 'removed': before_dedupe-len(candidates)}, ensure_ascii=False))
         if review_queue:
             queued,rejected=ranked_review_shortlist(candidates)
@@ -300,6 +313,7 @@ def run():
         # A previous partial run is skipped above; this run may create up to two rows.
         for i,(score,item,evidence) in enumerate(accepted):
             print('REVIEW_QUEUE' if review_queue else 'SELECT', category, index*2+i+1, score, item['title'])
+            in_run_topics.append({'id':'current-run','properties':{'후보 제목':{'title':[{'plain_text':item['title']}]},'원본 링크':{'url':item.get('url')}}})
             if not dry:
                 if review_queue:
                     source = create_unverified_source(item)
