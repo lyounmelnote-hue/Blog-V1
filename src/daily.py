@@ -265,71 +265,102 @@ def save_candidate(date, category, slot, score, item, evidence, run_id):
         'parent':{'type':'data_source_id','data_source_id':DAILY},'properties':props})
 
 
+def collect_candidates(category):
+    """Collect intent-led news and blog leads; search hits are never verified evidence."""
+    leads = []
+    for seed in SEEDS[category]:
+        for endpoint in ('news', 'blog'):
+            for item in search(seed, endpoint, 8):
+                item = dict(item)
+                item['search_endpoint'] = endpoint
+                leads.append(item)
+    return leads
+
+
+def choose_flexible(pool, existing_counts, capacity=10):
+    """Prefer two per category; fill remaining slots globally by score."""
+    slots = {cat: max(0, 2 - existing_counts.get(cat, 0)) for cat in CATEGORIES}
+    available = max(0, capacity - sum(existing_counts.values()))
+    chosen = []
+    remaining = {cat: list(pool.get(cat, [])) for cat in CATEGORIES}
+    for cat in CATEGORIES:
+        take = min(slots[cat], available, len(remaining[cat]))
+        chosen.extend((cat, item) for item in remaining[cat][:take])
+        remaining[cat] = remaining[cat][take:]
+        available -= take
+    overflow = sorted(((cat, item) for cat in CATEGORIES for item in remaining[cat]),
+                      key=lambda pair: (-pair[1]['editorial_score']['total'], pair[1].get('title', '')))
+    chosen.extend(overflow[:available])
+    return chosen
+
+
 def run():
-    dry=os.getenv('DRY_RUN','true').lower()=='true'
-    date=os.getenv('RECOMMEND_DATE') or date_kst()
-    run_id=os.getenv('GITHUB_RUN_ID','local')+'-'+os.getenv('GITHUB_RUN_ATTEMPT','1')
-    sources=curated_sources()
+    dry = os.getenv('DRY_RUN', 'true').lower() == 'true'
+    date = os.getenv('RECOMMEND_DATE') or date_kst()
+    run_id = os.getenv('GITHUB_RUN_ID', 'local') + '-' + os.getenv('GITHUB_RUN_ATTEMPT', '1')
     review_queue = os.getenv('REVIEW_QUEUE', 'true').lower() == 'true'
-    summary={}
     day_rows = existing_day_rows(date)
-    category_counts = existing_category_counts(day_rows)
-    used_urls = existing_day_urls(day_rows)
-    in_run_topics = []
-    history = None  # Load only when a category actually needs new recommendations.
-    print('DEDUP_DIAGNOSTICS', json.dumps({'date': date, 'existing_rows': len(day_rows), 'categories': dict(category_counts), 'existing_urls': len(used_urls)}, ensure_ascii=False))
-    print('SOURCE_DIAGNOSTICS', json.dumps(source_report(sources), ensure_ascii=False))
-    for index,category in enumerate(CATEGORIES):
-        existing_count = category_counts.get(category, 0)
-        if existing_count:
-            summary[category] = {'selected': 0, 'rejected': 0, 'missing': 0, 'skipped_existing': existing_count}
-            print('DEDUP_SKIP', json.dumps({'date': date, 'category': category, 'existing_rows': existing_count, 'reason': 'same_date_category'}, ensure_ascii=False))
-            continue
-        if history is None:
-            history = topic_dedupe.historical_rows(query, DAILY, date, days=7)
-            print('HISTORY_DEDUP', json.dumps({'lookback_days':7,'rows':len(history)}, ensure_ascii=False))
-        candidates=[]
-        for seed in SEEDS[category]:
-            candidates.extend(search(seed,'news',8))
-        before_dedupe = len(candidates)
-        candidates = dedupe_candidates(candidates, used_urls)
-        candidates, duplicate_records = topic_dedupe.filter_duplicates(candidates, history + day_rows)
-        # Also exclude duplicate topics already accepted in earlier categories of this run.
-        candidates, cross_category_duplicates = topic_dedupe.filter_duplicates(candidates, in_run_topics)
-        duplicate_records += cross_category_duplicates
-        print('TOPIC_DEDUP', json.dumps({'category':category,'duplicates':len(duplicate_records),'reasons':dict(Counter(x['type'] for _,x in duplicate_records))},ensure_ascii=False))
-        if duplicate_records and not dry:
-            # Separate audit trail in existing LOGS database; never create a recommendation row.
-            for duplicate_item, match in duplicate_records:
-                save_log('중복 소재: '+duplicate_item['title'][:90],run_id,'RESEARCH','SKIPPED',
-                         json.dumps({'version':'v4.5.2','type':match['type'],'prior_id':match['prior_id'],'prior_date':match['prior_date']},ensure_ascii=False))
-        print('DEDUP_FILTER', json.dumps({'category': category, 'removed': before_dedupe-len(candidates)}, ensure_ascii=False))
+    counts = existing_category_counts(day_rows)
+    remaining = max(0, 10 - len(day_rows))
+    print('DEDUP_DIAGNOSTICS', json.dumps({'date': date, 'existing_rows': len(day_rows),
+          'categories': dict(counts), 'remaining': remaining}, ensure_ascii=False))
+    if not remaining:
+        print('CAPACITY_REACHED', date)
+        return
+    sources = [] if review_queue else curated_sources()
+    history = topic_dedupe.historical_rows(query, DAILY, date, days=7)
+    seen = list(history) + list(day_rows)
+    pool = {}
+    audit = []
+    for category in CATEGORIES:
+        raw = collect_candidates(category)
+        novel, duplicates = topic_dedupe.filter_duplicates(raw, seen)
+        audit.extend((category, item, match) for item, match in duplicates)
         if review_queue:
-            queued,rejected=ranked_review_shortlist(candidates)
-            accepted=[(item['editorial_score']['total'],item,[]) for item in queued]
+            eligible, rejected = queue_shortlist(novel, limit=len(novel))
+            ranked = editorial_score.rank(eligible[:24], blog_result_count, top=len(eligible[:24]))
         else:
-            accepted,rejected=shortlist(category,candidates,sources)
-        summary[category]={'selected':len(accepted),'rejected':len(rejected),'missing':2-len(accepted),
-                           'rejection_reasons':rejection_report(rejected)}
-        print('GATE_DIAGNOSTICS', json.dumps({'category':category, 'counts':rejection_report(rejected)}, ensure_ascii=False))
-        # A previous partial run is skipped above; this run may create up to two rows.
-        for i,(score,item,evidence) in enumerate(accepted):
-            print('REVIEW_QUEUE' if review_queue else 'SELECT', category, index*2+i+1, score, item['title'])
-            in_run_topics.append({'id':'current-run','properties':{'후보 제목':{'title':[{'plain_text':item['title']}]},'원본 링크':{'url':item.get('url')}}})
-            if not dry:
-                if review_queue:
-                    source = create_unverified_source(item)
-                    save_review_candidate(date,category,index*2+i+1,item,run_id,source['id'])
-                else:
-                    save_candidate(date,category,index*2+i+1,score,item,evidence,run_id)
-                normalized = normalized_article_url(item.get('url'))
-                if normalized:
-                    used_urls.add(normalized)
-        if not dry and len(accepted)<2:
-            save_log('슬롯 미충족: '+category,run_id,'RESEARCH','SKIPPED',
-                     f'{date}: {2-len(accepted)}개 부족, 필터 제외 {len(rejected)}개')
-    print(json.dumps({'date':date,'dry_run':dry,'review_queue':review_queue,'summary':summary},ensure_ascii=False))
+            accepted, rejected = shortlist(category, novel, sources)
+            ranked = []
+            for score, item, evidence in accepted:
+                ranked.append(dict(item, editorial_score={'total': score}, verified_evidence=evidence))
+        pool[category] = ranked
+        print('COLLECT_DIAGNOSTICS', json.dumps({'category': category, 'raw': len(raw),
+              'novel': len(novel), 'duplicates': len(duplicates), 'eligible': len(ranked),
+              'rejected': rejection_report(rejected)}, ensure_ascii=False))
+        # Reserve unique candidates across categories, not merely the selected top two.
+        for item in ranked:
+            seen.append({'id': 'candidate', 'properties': {
+                '후보 제목': {'title': [{'plain_text': item['title']}]},
+                '원본 링크': {'url': item.get('url', '')}}})
+    selected = choose_flexible(pool, counts)
+    # An item that is already a same-day candidate must never be saved twice.
+    print('FLEXIBLE_ALLOCATION', json.dumps({'existing': len(day_rows), 'selected': len(selected),
+          'remaining_unfilled': remaining - len(selected),
+          'by_category': dict(Counter(cat for cat, _ in selected))}, ensure_ascii=False))
+    for category, item, match in audit:
+        print('TOPIC_DEDUP', json.dumps({'category': category, 'type': match['type'],
+              'prior_id': match['prior_id'], 'prior_date': match['prior_date']}, ensure_ascii=False))
+        if not dry:
+            save_log('중복 소재: ' + item['title'][:90], run_id, 'RESEARCH', 'SKIPPED',
+                     json.dumps({'version': 'v4.5.2', 'type': match['type'],
+                                 'prior_id': match['prior_id'], 'prior_date': match['prior_date']}, ensure_ascii=False))
+    used_slots = {int((r.get('properties', {}).get('슬롯 번호') or {}).get('number') or 0)
+                  for r in day_rows}
+    free_slots = [n for n in range(1, 11) if n not in used_slots]
+    for (category, item), slot in zip(selected, free_slots):
+        print('REVIEW_QUEUE' if review_queue else 'SELECT', category, slot,
+              item['editorial_score']['total'], item['title'])
+        if not dry:
+            if review_queue:
+                source = create_unverified_source(item)
+                save_review_candidate(date, category, slot, item, run_id, source['id'])
+            else:
+                save_candidate(date, category, slot, item['editorial_score']['total'],
+                               item, item.get('verified_evidence', []), run_id)
+    print('RUN_SUMMARY', json.dumps({'date': date, 'dry_run': dry,
+          'review_queue': review_queue, 'selected': len(selected)}, ensure_ascii=False))
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     run()
