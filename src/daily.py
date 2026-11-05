@@ -292,7 +292,7 @@ def allocate_ranked(pool, existing_counts, existing_urls, limit=DAILY_LIMIT):
     seen_titles = set()
     for category, item in sorted(pool, key=lambda pair: -pair[1]['editorial_score']['total']):
         url = normalized_article_url(item.get('url'))
-        title = re.sub(r'\\W', '', item.get('title', '')).lower()
+        title = re.sub(r'\W', '', item.get('title', '')).lower()
         if not url or url in seen_urls or not title or title in seen_titles:
             continue
         seen_urls.add(url)
