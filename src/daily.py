@@ -334,6 +334,34 @@ def run():
                 '후보 제목': {'title': [{'plain_text': item['title']}]},
                 '원본 링크': {'url': item.get('url', '')}}})
     selected = choose_flexible(pool, counts)
+    # Recheck the final shortlist across categories, then backfill unique candidates.
+    final_selected = []
+    selected_seen = list(history) + list(day_rows)
+    for category, item in selected:
+        match = topic_dedupe.duplicate_match(item, selected_seen)
+        if match:
+            audit.append((category, item, match))
+            continue
+        final_selected.append((category, item))
+        selected_seen.append({'id': 'selected', 'properties': {
+            '후보 제목': {'title': [{'plain_text': item['title']}]},
+            '원본 링크': {'url': item.get('url', '')}}})
+    chosen_ids = {id(item) for _, item in selected}
+    overflow = sorted(((cat, item) for cat in CATEGORIES for item in pool[cat]
+                       if id(item) not in chosen_ids),
+                      key=lambda pair: (-pair[1]['editorial_score']['total'], pair[1].get('title', '')))
+    for category, item in overflow:
+        if len(final_selected) >= remaining:
+            break
+        match = topic_dedupe.duplicate_match(item, selected_seen)
+        if match:
+            audit.append((category, item, match))
+            continue
+        final_selected.append((category, item))
+        selected_seen.append({'id': 'selected', 'properties': {
+            '후보 제목': {'title': [{'plain_text': item['title']}]},
+            '원본 링크': {'url': item.get('url', '')}}})
+    selected = final_selected
     # An item that is already a same-day candidate must never be saved twice.
     print('FLEXIBLE_ALLOCATION', json.dumps({'existing': len(day_rows), 'selected': len(selected),
           'remaining_unfilled': remaining - len(selected),
