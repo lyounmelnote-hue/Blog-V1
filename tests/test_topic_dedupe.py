@@ -31,4 +31,42 @@ class TopicDedupeTests(unittest.TestCase):
     def test_not_approved_by_dedupe(self):
         fresh,_=filter_duplicates([{"title":"공공안심글꼴 설치 가이드","url":"https://a.example/1"}],[])
         self.assertNotIn("검증 상태",fresh[0])
+
+class IntegrationAllocationTests(unittest.TestCase):
+    def test_partial_backfill_and_capacity(self):
+        from src.daily import choose_flexible, CATEGORIES
+        def item(n):
+            return {'title': str(n), 'editorial_score': {'total': 90-n}}
+        pool={c:[item(i) for i in range(5)] for c in CATEGORIES}
+        result=choose_flexible(pool, {'문화':1,'일상':2})
+        self.assertEqual(len(result),7)
+        self.assertEqual(sum(c=='문화' for c,_ in result)>=1,True)
+    def test_flexible_fills_from_other_categories(self):
+        from src.daily import choose_flexible, CATEGORIES
+        pool={c:[] for c in CATEGORIES}
+        pool['문화']=[{'title':str(i),'editorial_score':{'total':90-i}} for i in range(12)]
+        result=choose_flexible(pool,{})
+        self.assertEqual(len(result),10)
+    def test_collects_news_and_blog(self):
+        from unittest.mock import patch
+        from src.daily import collect_candidates, SEEDS
+        with patch('src.daily.search',side_effect=lambda seed, endpoint, count:[{'title':endpoint,'summary':'text','url':'https://example.com/'+endpoint}]) as mock:
+            result=collect_candidates('문화')
+        self.assertEqual(len(result),len(SEEDS['문화'])*2)
+        self.assertEqual({x['search_endpoint'] for x in result},{'news','blog'})
+    def test_run_dry_does_not_write(self):
+        from unittest.mock import patch
+        from src import daily
+        with patch.dict('os.environ',{'DRY_RUN':'true','REVIEW_QUEUE':'true'}), \
+             patch.object(daily,'existing_day_rows',return_value=[]), \
+             patch.object(daily.topic_dedupe,'historical_rows',return_value=[]), \
+             patch.object(daily,'collect_candidates',return_value=[]), \
+             patch.object(daily,'save_log') as log, \
+             patch.object(daily,'create_unverified_source') as source, \
+             patch.object(daily,'save_review_candidate') as save:
+            daily.run()
+            log.assert_not_called()
+            source.assert_not_called()
+            save.assert_not_called()
+
 if __name__=="__main__":unittest.main()
