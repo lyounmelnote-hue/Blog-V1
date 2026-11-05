@@ -18,6 +18,15 @@ SEEDS = {
  '생활정보팁':['정부 생활 정보 안내','가정 생활 절약 정리'],
  '건강':['질병관리청 건강 생활 수칙','보건복지부 건강 예방 안내'],
  '핫뉴스':['과학 기술 공식 발표','생활 제도 변경 공지']}
+INTENT_SEEDS = {
+ '문화':['전시 일정 예약 방법','도서 추천 비교'],
+ '일상':['계절별 준비물 체크리스트','생활 루틴 정리 방법'],
+ '생활정보팁':['지원금 신청 대상 방법','생활비 절약 비교'],
+ '건강':['질병관리청 예방 수칙','건강검진 준비 방법'],
+ '핫뉴스':['새 제도 시행 대상 확인','디지털 서비스 이용 방법']}
+DAILY_LIMIT = 10
+CATEGORY_TARGET = 2
+CATEGORY_MAX = 4
 BLOCKED = ['선거','대선','총선','정당','정치인','혐오','폭행','살인','성범죄','불륜','루머','수사 중','재판 중','갈등','전쟁','자살','극단적 선택']
 OFFICIAL_DOMAINS = ('go.kr','or.kr','ac.kr','kopis.or.kr')
 
@@ -43,7 +52,8 @@ def search(query_text, endpoint='news', count=10):
        params={'query':query_text,'display':count,'sort':'date' if endpoint=='news' else 'sim'})
     return [{'title':clean(x.get('title')),'summary':clean(x.get('description')),
              'url':x.get('originallink') or x.get('link') or '',
-             'publisher_url':x.get('link') or '', 'published_at':x.get('pubDate') or ''} for x in data.get('items', [])]
+             'publisher_url':x.get('link') or '', 'published_at':x.get('pubDate') or '',
+             'channel':endpoint, 'search_query':query_text} for x in data.get('items', [])]
 
 
 def curated_sources():
@@ -265,54 +275,88 @@ def save_candidate(date, category, slot, score, item, evidence, run_id):
         'parent':{'type':'data_source_id','data_source_id':DAILY},'properties':props})
 
 
-def run():
-    dry=os.getenv('DRY_RUN','true').lower()=='true'
-    date=os.getenv('RECOMMEND_DATE') or date_kst()
-    run_id=os.getenv('GITHUB_RUN_ID','local')+'-'+os.getenv('GITHUB_RUN_ATTEMPT','1')
-    sources=curated_sources()
-    review_queue = os.getenv('REVIEW_QUEUE', 'true').lower() == 'true'
-    summary={}
-    day_rows = existing_day_rows(date)
-    category_counts = existing_category_counts(day_rows)
-    used_urls = existing_day_urls(day_rows)
-    print('DEDUP_DIAGNOSTICS', json.dumps({'date': date, 'existing_rows': len(day_rows), 'categories': dict(category_counts), 'existing_urls': len(used_urls)}, ensure_ascii=False))
-    print('SOURCE_DIAGNOSTICS', json.dumps(source_report(sources), ensure_ascii=False))
-    for index,category in enumerate(CATEGORIES):
-        existing_count = category_counts.get(category, 0)
-        if existing_count:
-            summary[category] = {'selected': 0, 'rejected': 0, 'missing': 0, 'skipped_existing': existing_count}
-            print('DEDUP_SKIP', json.dumps({'date': date, 'category': category, 'existing_rows': existing_count, 'reason': 'same_date_category'}, ensure_ascii=False))
+def collect_candidates(category):
+    """News + blog search with informational intent; all results remain unverified."""
+    collected = []
+    for seed in SEEDS[category]:
+        collected.extend(search(seed, 'news', 8))
+    for seed in INTENT_SEEDS[category]:
+        collected.extend(search(seed, 'blog', 8))
+    return collected
+
+
+def allocate_ranked(pool, existing_counts, existing_urls, limit=DAILY_LIMIT):
+    """Prefer two per category, then fill globally up to four/category."""
+    available = []
+    seen_urls = set(existing_urls)
+    seen_titles = set()
+    for category, item in sorted(pool, key=lambda pair: -pair[1]['editorial_score']['total']):
+        url = normalized_article_url(item.get('url'))
+        title = re.sub(r'\\W', '', item.get('title', '')).lower()
+        if not url or url in seen_urls or not title or title in seen_titles:
             continue
-        candidates=[]
-        for seed in SEEDS[category]:
-            candidates.extend(search(seed,'news',8))
-        before_dedupe = len(candidates)
-        candidates = dedupe_candidates(candidates, used_urls)
-        print('DEDUP_FILTER', json.dumps({'category': category, 'removed': before_dedupe-len(candidates)}, ensure_ascii=False))
-        if review_queue:
-            queued,rejected=ranked_review_shortlist(candidates)
-            accepted=[(item['editorial_score']['total'],item,[]) for item in queued]
-        else:
-            accepted,rejected=shortlist(category,candidates,sources)
-        summary[category]={'selected':len(accepted),'rejected':len(rejected),'missing':2-len(accepted),
-                           'rejection_reasons':rejection_report(rejected)}
-        print('GATE_DIAGNOSTICS', json.dumps({'category':category, 'counts':rejection_report(rejected)}, ensure_ascii=False))
-        # A previous partial run is skipped above; this run may create up to two rows.
-        for i,(score,item,evidence) in enumerate(accepted):
-            print('REVIEW_QUEUE' if review_queue else 'SELECT', category, index*2+i+1, score, item['title'])
-            if not dry:
-                if review_queue:
-                    source = create_unverified_source(item)
-                    save_review_candidate(date,category,index*2+i+1,item,run_id,source['id'])
-                else:
-                    save_candidate(date,category,index*2+i+1,score,item,evidence,run_id)
-                normalized = normalized_article_url(item.get('url'))
-                if normalized:
-                    used_urls.add(normalized)
-        if not dry and len(accepted)<2:
-            save_log('슬롯 미충족: '+category,run_id,'RESEARCH','SKIPPED',
-                     f'{date}: {2-len(accepted)}개 부족, 필터 제외 {len(rejected)}개')
-    print(json.dumps({'date':date,'dry_run':dry,'review_queue':review_queue,'summary':summary},ensure_ascii=False))
+        seen_urls.add(url)
+        seen_titles.add(title)
+        available.append((category, item))
+    counts = Counter(existing_counts)
+    selected = []
+    capacity = max(0, limit - sum(counts.values()))
+    for ceiling in (CATEGORY_TARGET, CATEGORY_MAX):
+        for category, item in available:
+            if len(selected) >= capacity:
+                break
+            if (category, item) in selected or counts[category] >= ceiling:
+                continue
+            selected.append((category, item))
+            counts[category] += 1
+    return selected
+
+
+def run():
+    dry = os.getenv('DRY_RUN', 'true').lower() == 'true'
+    date = os.getenv('RECOMMEND_DATE') or date_kst()
+    run_id = os.getenv('GITHUB_RUN_ID', 'local') + '-' + os.getenv('GITHUB_RUN_ATTEMPT', '1')
+    review_queue = os.getenv('REVIEW_QUEUE', 'true').lower() == 'true'
+    day_rows = existing_day_rows(date)
+    counts = existing_category_counts(day_rows)
+    used_urls = existing_day_urls(day_rows)
+    print('DEDUP_DIAGNOSTICS', json.dumps({'date':date, 'existing_rows':len(day_rows),
+          'categories':dict(counts), 'existing_urls':len(used_urls)}, ensure_ascii=False))
+    if len(day_rows) >= DAILY_LIMIT:
+        print('DAILY_LIMIT_REACHED', len(day_rows))
+        return
+    if not review_queue:
+        raise RuntimeError('v4.5.1 requires REVIEW_QUEUE=true; verified pipeline unchanged')
+    pool = []
+    stats = {}
+    for category in CATEGORIES:
+        raw = collect_candidates(category)
+        candidates = dedupe_candidates(raw, used_urls)
+        eligible, rejected = queue_shortlist(candidates, limit=len(candidates))
+        # Score all eligible candidates, but cap network calls per category.
+        ranked = editorial_score.rank(eligible[:24], blog_result_count, top=24)
+        pool.extend((category, item) for item in ranked)
+        stats[category] = {'collected':len(raw), 'eligible':len(eligible),
+                           'rejected':len(rejected), 'reasons':rejection_report(rejected)}
+    chosen = allocate_ranked(pool, counts, used_urls)
+    print('COLLECTION_DIAGNOSTICS', json.dumps(stats, ensure_ascii=False))
+    print('ALLOCATION_DIAGNOSTICS', json.dumps({'selected':len(chosen),
+          'missing':max(0, DAILY_LIMIT-len(day_rows)-len(chosen)),
+          'categories':dict(Counter(c for c,_ in chosen))}, ensure_ascii=False))
+    for offset, (category, item) in enumerate(chosen, start=1):
+        counts[category] += 1
+        slot = len(day_rows) + offset
+        print('REVIEW_QUEUE', category, slot, item['editorial_score']['total'], item['title'])
+        if dry:
+            continue
+        source = create_unverified_source(item)
+        save_review_candidate(date, category, slot, item, run_id, source['id'])
+    missing = max(0, DAILY_LIMIT-len(day_rows)-len(chosen))
+    if missing and not dry:
+        save_log('추천 후보 부족', run_id, 'RESEARCH', 'SKIPPED',
+                 f'{date}: {missing}개 부족; 검증 조건 완화 없이 보류')
+    print(json.dumps({'date':date, 'dry_run':dry, 'review_queue':review_queue,
+                      'selected':len(chosen), 'missing':missing}, ensure_ascii=False))
 
 
 if __name__=='__main__':
