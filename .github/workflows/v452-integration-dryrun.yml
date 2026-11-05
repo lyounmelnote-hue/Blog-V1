@@ -1,5 +1,11 @@
 name: v4.5.2 integration dry-run (read only)
 on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - '.github/workflows/v452-integration-dryrun.yml'
   workflow_dispatch:
     inputs:
       recommend_date:
@@ -14,9 +20,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
-      NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
-      NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
       NOTION_DAILY_DS: '13615add-6aef-417c-b1f7-ca93217f4cea'
       NOTION_SOURCES_DS: '51596cf1-d049-472d-9689-8048f527ab41'
       NOTION_LOGS_DS: '25735bf7-9a91-4d0a-a596-d867d9c66447'
@@ -32,14 +35,24 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Unit tests
         run: python -m unittest discover -s tests -v
+      - name: Compile source
+        run: python -m compileall -q src
       - name: Verify read-only mode and run live source queries
+        if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
         shell: bash
         run: |
           set -euo pipefail
           test "$DRY_RUN" = "true"
           test "$REVIEW_QUEUE" = "true"
           mkdir -p integration-report
-          python -m src.daily 2>&1 | tee integration-report/dry-run.log
+          python -m src.integration_dryrun 2>&1 | tee integration-report/dry-run.log
+      - name: Explain fork limitation
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        run: echo 'Live integration skipped for fork PR; credentials are unavailable. Offline tests only.' >> "$GITHUB_STEP_SUMMARY"
       - name: Upload diagnostics (may contain article titles and URLs)
         if: always()
         uses: actions/upload-artifact@v4
