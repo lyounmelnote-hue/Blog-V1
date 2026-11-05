@@ -276,8 +276,7 @@ def run():
     category_counts = existing_category_counts(day_rows)
     used_urls = existing_day_urls(day_rows)
     in_run_topics = []
-    history = topic_dedupe.historical_rows(query, DAILY, date, days=7)
-    print('HISTORY_DEDUP', json.dumps({'lookback_days':7,'rows':len(history)}, ensure_ascii=False))
+    history = None  # Load only when a category actually needs new recommendations.
     print('DEDUP_DIAGNOSTICS', json.dumps({'date': date, 'existing_rows': len(day_rows), 'categories': dict(category_counts), 'existing_urls': len(used_urls)}, ensure_ascii=False))
     print('SOURCE_DIAGNOSTICS', json.dumps(source_report(sources), ensure_ascii=False))
     for index,category in enumerate(CATEGORIES):
@@ -286,6 +285,9 @@ def run():
             summary[category] = {'selected': 0, 'rejected': 0, 'missing': 0, 'skipped_existing': existing_count}
             print('DEDUP_SKIP', json.dumps({'date': date, 'category': category, 'existing_rows': existing_count, 'reason': 'same_date_category'}, ensure_ascii=False))
             continue
+        if history is None:
+            history = topic_dedupe.historical_rows(query, DAILY, date, days=7)
+            print('HISTORY_DEDUP', json.dumps({'lookback_days':7,'rows':len(history)}, ensure_ascii=False))
         candidates=[]
         for seed in SEEDS[category]:
             candidates.extend(search(seed,'news',8))
