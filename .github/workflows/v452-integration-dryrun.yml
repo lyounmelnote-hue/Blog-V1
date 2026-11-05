@@ -40,6 +40,7 @@ jobs:
       - name: Verify read-only mode and run live source queries
         if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
         env:
+          EVENT_NAME: ${{ github.event_name }}
           NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
@@ -48,6 +49,12 @@ jobs:
           set -euo pipefail
           test "$DRY_RUN" = "true"
           test "$REVIEW_QUEUE" = "true"
+          # Today's production queue may already be full. PR previews use tomorrow
+          # so live collection runs and today's entries participate in 7-day dedupe.
+          # Manual dispatch retains the requested date (blank still means today).
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            export RECOMMEND_DATE="$(TZ=Asia/Seoul date -d tomorrow +%F)"
+          fi
           mkdir -p integration-report
           python -m src.integration_dryrun 2>&1 | tee integration-report/dry-run.log
       - name: Explain fork limitation
