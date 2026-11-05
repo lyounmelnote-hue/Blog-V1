@@ -66,6 +66,16 @@ class IntegrationAllocationTests(unittest.TestCase):
             result=collect_candidates('문화')
         self.assertEqual(len(result),len(SEEDS['문화'])*2)
         self.assertEqual({x['search_endpoint'] for x in result},{'news','blog'})
+    def test_blog_postdate_is_used_for_freshness(self):
+        from unittest.mock import patch
+        from src.daily import search
+        payload = {'items': [{'title': '생활정보 정리', 'description': '안내',
+                              'link': 'https://blog.example/post', 'postdate': '20261105'}]}
+        with patch('src.daily.request', return_value=payload), \
+             patch.dict('os.environ', {'NAVER_CLIENT_ID': 'test', 'NAVER_CLIENT_SECRET': 'test'}):
+            items = search('생활정보', 'blog')
+        self.assertEqual(items[0]['published_at'], '2026-11-05')
+
     def test_run_dry_does_not_write(self):
         from unittest.mock import patch
         from src import daily
