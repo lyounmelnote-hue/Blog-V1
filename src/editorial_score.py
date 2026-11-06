@@ -97,6 +97,7 @@ def distinctiveness(item, peers):
 
 
 BLOG_PRACTICAL = ('방법','사용법','신청','발급','설치','절약','비교','준비물','체크리스트','대상','조건','기간','주의사항','가이드','정리','예약')
+LOW_ACTION = ('고객센터 안내', '고객 의견', '업무협약', '브랜드 홍보', '수상 소식', '서비스 개편 안내')
 PROMOTIONAL = ('기념식','축사','업무협약','홍보대사','수상식','브랜드 론칭','캠페인 개최','기념행사','성료','기념 축제')
 
 def blog_fit(item):
@@ -104,7 +105,8 @@ def blog_fit(item):
     text = item.get('title','') + ' ' + item.get('summary','')
     useful = sum(k in text for k in BLOG_PRACTICAL)
     promotion = sum(k in text for k in PROMOTIONAL)
-    return max(0, min(15, 5 + min(useful, 3) * 4 - min(promotion, 2) * 6))
+    low_action = sum(k in text for k in LOW_ACTION)
+    return max(0, min(15, 5 + min(useful, 3) * 4 - min(promotion, 2) * 6 - min(low_action, 2) * 5))
 
 def score(item, peers, blog_count=None, today=None):
     parts = {'검색관심도_대리지표': demand(blog_count),
