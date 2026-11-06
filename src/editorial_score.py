@@ -96,27 +96,50 @@ def distinctiveness(item, peers):
     return max(0, min(15, 10 + bonus - round(max_overlap * 12)))
 
 
+BLOG_PRACTICAL = ('방법','사용법','신청','발급','설치','절약','비교','준비물','체크리스트','대상','조건','기간','주의사항','가이드','정리','예약')
+LOW_ACTION = ('고객센터 안내', '고객 의견', '업무협약', '브랜드 홍보', '수상 소식', '서비스 개편 안내')
+PROMOTIONAL = ('기념식','축사','업무협약','홍보대사','수상식','브랜드 론칭','캠페인 개최','기념행사','성료','기념 축제')
+
+def blog_fit(item):
+    """0..15: reader actionability, not measured traffic."""
+    text = item.get('title','') + ' ' + item.get('summary','')
+    useful = sum(k in text for k in BLOG_PRACTICAL)
+    promotion = sum(k in text for k in PROMOTIONAL)
+    low_action = sum(k in text for k in LOW_ACTION)
+    # Reader intent needs informative summary support, not just SEO words in a headline.
+    summary = item.get('summary', '')
+    informative = sum(k in summary for k in ('대상', '조건', '기간', '비용', '절차', '방법', '수칙', '위치', '일정', '준비', '주의'))
+    advertising = sum(k in text for k in ('광고', '협찬', '보도자료', '기업 홍보', '브랜드 홍보', '업무협약', '수상', '론칭'))
+    announcement = any(k in text for k in ('행사 개최', '개최 발표', '출시 발표', '기념식', '성료'))
+    penalty = min(advertising, 2) * 6 + (5 if announcement and informative < 2 else 0)
+    return max(0, min(15, 3 + min(useful, 3) * 3 + min(informative, 2) * 2
+                         - min(promotion, 2) * 6 - min(low_action, 2) * 5 - penalty))
+
 def score(item, peers, blog_count=None, today=None):
     parts = {'검색관심도_대리지표': demand(blog_count),
              '시의성': freshness(item, today),
              '실용성': usefulness(item),
              'SEO_적합성': seo(item),
-             '차별성': distinctiveness(item, peers)}
-    return {'total': sum(parts.values()), 'parts': parts,
+             '차별성': distinctiveness(item, peers),
+             '블로그_적합성': blog_fit(item)}
+    return {'total': min(100, round(sum(parts.values()) * 100 / 115)), 'parts': parts,
             'search_phrase': search_phrase(item.get('title','')),
             'blog_result_count': blog_count,
-            'method': '검색량 실측 아님: 네이버 블로그 검색 결과 총수 대리지표. 5개 항목 규칙 기반 추정.'}
+            'method': '검색량 실측 아님: 네이버 블로그 검색 결과 총수 대리지표. 6개 항목 규칙 기반 추정.'}
 
 
 def rank(candidates, blog_count_lookup=None, top=2, today=None):
     """Filter first; rank second. Network errors fall back to neutral demand score."""
     results=[]
+    counts = {}
     for item in candidates:
         phrase=search_phrase(item.get('title',''))
         count=None
         if blog_count_lookup and phrase:
             try:
-                count=blog_count_lookup(phrase)
+                if phrase not in counts:
+                    counts[phrase] = blog_count_lookup(phrase)
+                count = counts[phrase]
             except Exception as exc:
                 print('DEMAND_PROXY_UNAVAILABLE', type(exc).__name__)
         item=dict(item)

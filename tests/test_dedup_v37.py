@@ -25,6 +25,7 @@ class DedupTests(unittest.TestCase):
         with patch.object(daily,'existing_day_rows',return_value=[row('문화','https://example.com/a')]), \
              patch.object(daily,'curated_sources',return_value=[]), \
              patch.object(daily,'search',return_value=[]), \
+             patch.object(daily.topic_dedupe,'historical_rows',return_value=[]), \
              patch.object(daily,'create_unverified_source') as create, \
              patch.dict('os.environ',{'DRY_RUN':'false','REVIEW_QUEUE':'true'}):
             daily.run()
