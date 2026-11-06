@@ -6,9 +6,20 @@ import re
 import sys
 from datetime import datetime, timezone, timedelta
 from collections import Counter
+from contextvars import ContextVar
 from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 from .main import notion, query, request, rich, textprop, SOURCES, CONTENT, KEYWORDS, save_log
-from . import editorial_score, topic_dedupe
+from . import editorial_score, topic_dedupe, category_fit
+from .naver_cache import SearchCache
+
+_search_cache = ContextVar('naver_search_cache', default=None)
+
+
+def naver_data(phrase, endpoint, count):
+    cache = _search_cache.get() or SearchCache()
+    return cache.get(request, endpoint, phrase, count, {
+        'X-Naver-Client-Id': os.environ['NAVER_CLIENT_ID'],
+        'X-Naver-Client-Secret': os.environ['NAVER_CLIENT_SECRET']})
 
 DAILY = os.getenv('NOTION_DAILY_DS', '13615add-6aef-417c-b1f7-ca93217f4cea')
 CATEGORIES = ['문화', '일상', '생활정보팁', '건강', '핫뉴스']
@@ -37,10 +48,7 @@ def is_official(url):
 
 
 def search(query_text, endpoint='news', count=10):
-    data = request('GET', f'https://openapi.naver.com/v1/search/{endpoint}.json',
-       headers={'X-Naver-Client-Id':os.environ['NAVER_CLIENT_ID'],
-                'X-Naver-Client-Secret':os.environ['NAVER_CLIENT_SECRET']},
-       params={'query':query_text,'display':count,'sort':'date' if endpoint=='news' else 'sim'})
+    data = naver_data(query_text, endpoint, count)
     return [{'title':clean(x.get('title')),'summary':clean(x.get('description')),
              'url':x.get('originallink') or x.get('link') or '',
              'publisher_url':x.get('link') or '', 'published_at':x.get('pubDate') or (x.get('postdate', '')[:4] + '-' + x.get('postdate', '')[4:6] + '-' + x.get('postdate', '')[6:8] if re.fullmatch(r'\d{8}', x.get('postdate', '')) else '')} for x in data.get('items', [])]
@@ -125,10 +133,7 @@ def queue_shortlist(candidates, limit=2):
 
 def blog_result_count(phrase):
     """Naver blog result TOTAL: interest/supply proxy, NOT actual search volume."""
-    data = request('GET', 'https://openapi.naver.com/v1/search/blog.json',
-       headers={'X-Naver-Client-Id':os.environ['NAVER_CLIENT_ID'],
-                'X-Naver-Client-Secret':os.environ['NAVER_CLIENT_SECRET']},
-       params={'query':phrase,'display':1,'sort':'sim'})
+    data = naver_data(phrase, 'blog', 1)
     return data.get('total')
 
 
@@ -299,6 +304,16 @@ def choose_flexible(pool, existing_counts, capacity=10):
 
 
 def run():
+    cache = SearchCache()
+    token = _search_cache.set(cache)
+    try:
+        return _run()
+    finally:
+        print('SEARCH_API_DIAGNOSTICS', json.dumps(cache.report(), ensure_ascii=False))
+        _search_cache.reset(token)
+
+
+def _run():
     dry = os.getenv('DRY_RUN', 'true').lower() == 'true'
     date = os.getenv('RECOMMEND_DATE') or date_kst()
     run_id = os.getenv('GITHUB_RUN_ID', 'local') + '-' + os.getenv('GITHUB_RUN_ATTEMPT', '1')
@@ -321,7 +336,15 @@ def run():
     for category in CATEGORIES:
         raw = collect_candidates(category)
         endpoint_counts.update(item.get('search_endpoint', 'unknown') for item in raw)
-        novel, duplicates = topic_dedupe.filter_duplicates(raw, seen)
+        fitting = []
+        category_rejected = []
+        for item in raw:
+            fit = category_fit.evaluate(category, item)
+            if fit['accepted']:
+                fitting.append(dict(item, category_fit=fit))
+            else:
+                category_rejected.append((item, 'CATEGORY: ' + fit['reason']))
+        novel, duplicates = topic_dedupe.filter_duplicates(fitting, seen)
         audit.extend((category, item, match) for item, match in duplicates)
         if review_queue:
             eligible, rejected = queue_shortlist(novel, limit=len(novel))
@@ -331,6 +354,14 @@ def run():
             ranked = []
             for score, item, evidence in accepted:
                 ranked.append(dict(item, editorial_score={'total': score}, verified_evidence=evidence))
+        rejected.extend(category_rejected)
+        for item in ranked:
+            if item['editorial_score']['total'] < MIN_EDITORIAL_SCORE:
+                rejected.append((item, 'QUALITY: 최소 편집 점수 미달'))
+        for item, reason in rejected:
+            print('CANDIDATE_REJECTED', json.dumps({'category': category,
+                  'title': item.get('title', ''), 'score': item.get('editorial_score', {}).get('total'),
+                  'duplicate': False, 'reason': reason}, ensure_ascii=False))
         quality_rejected[category] = sum(item.get('editorial_score', {}).get('total', 0) < MIN_EDITORIAL_SCORE for item in ranked)
         pool[category] = ranked
         print('COLLECT_DIAGNOSTICS', json.dumps({'category': category, 'raw': len(raw),
@@ -388,6 +419,7 @@ def run():
           'by_category': dict(Counter(cat for cat, _ in selected))}, ensure_ascii=False))
     for category, item, match in audit:
         print('TOPIC_DEDUP', json.dumps({'category': category, 'type': match['type'],
+              'title': item.get('title', ''), 'duplicate': True, 'reason': '7일 또는 실행 내 동일 소재',
               'prior_id': match['prior_id'], 'prior_date': match['prior_date']}, ensure_ascii=False))
         if not dry:
             save_log('중복 소재: ' + item['title'][:90], run_id, 'RESEARCH', 'SKIPPED',
@@ -397,6 +429,10 @@ def run():
                   for r in day_rows}
     free_slots = [n for n in range(1, 11) if n not in used_slots]
     for (category, item), slot in zip(selected, free_slots):
+        print('RECOMMENDATION', json.dumps({'title': item['title'], 'category': category,
+              'score': item['editorial_score']['total'], 'duplicate': False, 'exclusion_reason': '',
+              'url': item['url'], 'category_fit': item.get('category_fit', {}),
+              'editorial_score': item['editorial_score']}, ensure_ascii=False))
         print('REVIEW_QUEUE' if review_queue else 'SELECT', category, slot,
               item['editorial_score']['total'], item['title'])
         if not dry:

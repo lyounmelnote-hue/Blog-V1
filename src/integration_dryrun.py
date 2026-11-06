@@ -63,7 +63,8 @@ def run():
     records = {}
     for line in output.getvalue().splitlines():
         tag, _, payload = line.partition(' ')
-        if tag in ('COLLECT_DIAGNOSTICS', 'DEDUP_DIAGNOSTICS', 'FLEXIBLE_ALLOCATION', 'RUN_SUMMARY', 'QUALITY_REPORT'):
+        if tag in ('COLLECT_DIAGNOSTICS', 'DEDUP_DIAGNOSTICS', 'FLEXIBLE_ALLOCATION', 'RUN_SUMMARY', 'QUALITY_REPORT',
+                   'RECOMMENDATION', 'CANDIDATE_REJECTED', 'TOPIC_DEDUP', 'SEARCH_API_DIAGNOSTICS'):
             records.setdefault(tag, []).append(json.loads(payload))
     existing = records['DEDUP_DIAGNOSTICS'][0]['existing_rows']
     if existing >= 10:
@@ -89,6 +90,9 @@ def run():
     if any(int(score) < daily.MIN_EDITORIAL_SCORE for score in quality['score_distribution']):
         raise AssertionError('Below-threshold candidate was selected')
     report = {'status': 'passed', 'summary': summary, 'allocation': allocation, 'quality': quality,
+              'recommendations': records.get('RECOMMENDATION', []),
+              'excluded': records.get('CANDIDATE_REJECTED', []) + records.get('TOPIC_DEDUP', []),
+              'search_api': records.get('SEARCH_API_DIAGNOSTICS', []),
               'collection': collected, 'http_calls': dict(guard.calls),
               'forbidden_requests': guard.blocked,
               'note': 'Search results are unverified leads; result totals are not search volume.'}

@@ -106,7 +106,14 @@ def blog_fit(item):
     useful = sum(k in text for k in BLOG_PRACTICAL)
     promotion = sum(k in text for k in PROMOTIONAL)
     low_action = sum(k in text for k in LOW_ACTION)
-    return max(0, min(15, 5 + min(useful, 3) * 4 - min(promotion, 2) * 6 - min(low_action, 2) * 5))
+    # Reader intent needs informative summary support, not just SEO words in a headline.
+    summary = item.get('summary', '')
+    informative = sum(k in summary for k in ('대상', '조건', '기간', '비용', '절차', '방법', '수칙', '위치', '일정', '준비', '주의'))
+    advertising = sum(k in text for k in ('광고', '협찬', '보도자료', '기업 홍보', '브랜드 홍보', '업무협약', '수상', '론칭'))
+    announcement = any(k in text for k in ('행사 개최', '개최 발표', '출시 발표', '기념식', '성료'))
+    penalty = min(advertising, 2) * 6 + (5 if announcement and informative < 2 else 0)
+    return max(0, min(15, 3 + min(useful, 3) * 3 + min(informative, 2) * 2
+                         - min(promotion, 2) * 6 - min(low_action, 2) * 5 - penalty))
 
 def score(item, peers, blog_count=None, today=None):
     parts = {'검색관심도_대리지표': demand(blog_count),
@@ -124,12 +131,15 @@ def score(item, peers, blog_count=None, today=None):
 def rank(candidates, blog_count_lookup=None, top=2, today=None):
     """Filter first; rank second. Network errors fall back to neutral demand score."""
     results=[]
+    counts = {}
     for item in candidates:
         phrase=search_phrase(item.get('title',''))
         count=None
         if blog_count_lookup and phrase:
             try:
-                count=blog_count_lookup(phrase)
+                if phrase not in counts:
+                    counts[phrase] = blog_count_lookup(phrase)
+                count = counts[phrase]
             except Exception as exc:
                 print('DEMAND_PROXY_UNAVAILABLE', type(exc).__name__)
         item=dict(item)

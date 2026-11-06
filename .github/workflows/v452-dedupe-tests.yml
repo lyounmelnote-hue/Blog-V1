@@ -2,9 +2,8 @@ name: v4.5.2 dedupe tests
 on:
   pull_request:
     paths:
-      - 'src/daily.py'
-      - 'src/topic_dedupe.py'
-      - 'tests/test_topic_dedupe.py'
+      - 'src/**'
+      - 'tests/**'
       - '.github/workflows/v452-dedupe-tests.yml'
   workflow_dispatch:
 permissions:

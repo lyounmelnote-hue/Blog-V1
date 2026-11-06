@@ -40,7 +40,7 @@ class ReadOnlyIntegrationTests(unittest.TestCase):
                 endpoint = url.split('/')[-1]
                 title = query + ' ' + endpoint + ' 설치 비교'
                 link = 'https://example.com/' + quote(query) + '/' + endpoint
-                lead = {'title': title, 'description': '신청 방법 및 준비물 안내', 'link': link}
+                lead = {'title': title, 'description': query + ' 신청 방법 및 준비물 안내', 'link': link}
                 data = {'items': [
                     {'title': '과거 소재 세부 안내', 'description': '이전 소재', 'link': 'https://example.com/history?utm_source=test'},
                     lead, dict(lead),
@@ -69,7 +69,9 @@ class ReadOnlyIntegrationTests(unittest.TestCase):
                 self.assertEqual(report['quality']['unfilled'], 0)
                 self.assertEqual(sum(report['quality']['raw_by_endpoint'].values()), sum(x['raw'] for x in report['collection']))
                 self.assertEqual(report['forbidden_requests'], 0)
-                self.assertTrue(all(x['duplicates'] > 0 for x in report['collection']))
+                # Off-category historical leads now leave before duplicate/scoring work.
+                self.assertTrue(any(x['duplicates'] > 0 for x in report['collection']))
+                self.assertTrue(any(x['reason'].startswith('CATEGORY:') for x in report['excluded']))
                 self.assertTrue(any(x['rejected'] for x in report['collection']))
                 self.assertGreater(report['http_calls']['news.json'], 0)
                 self.assertGreater(report['http_calls']['blog.json'], 0)
