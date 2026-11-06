@@ -63,7 +63,7 @@ def run():
     records = {}
     for line in output.getvalue().splitlines():
         tag, _, payload = line.partition(' ')
-        if tag in ('COLLECT_DIAGNOSTICS', 'DEDUP_DIAGNOSTICS', 'FLEXIBLE_ALLOCATION', 'RUN_SUMMARY'):
+        if tag in ('COLLECT_DIAGNOSTICS', 'DEDUP_DIAGNOSTICS', 'FLEXIBLE_ALLOCATION', 'RUN_SUMMARY', 'QUALITY_REPORT'):
             records.setdefault(tag, []).append(json.loads(payload))
     existing = records['DEDUP_DIAGNOSTICS'][0]['existing_rows']
     if existing >= 10:
@@ -77,7 +77,18 @@ def run():
         raise AssertionError('Daily capacity exceeded')
     if summary['selected'] != allocation['selected']:
         raise AssertionError('Allocation and summary disagree')
-    report = {'status': 'passed', 'summary': summary, 'allocation': allocation,
+    quality = records['QUALITY_REPORT'][0]
+    if quality['selected'] != summary['selected'] or quality['unfilled'] != allocation['remaining_unfilled']:
+        raise AssertionError('Quality report and final allocation disagree')
+    if sum(quality['raw_by_endpoint'].values()) != sum(x['raw'] for x in collected):
+        raise AssertionError('Endpoint totals and collected candidates disagree')
+    if any(endpoint not in quality['raw_by_endpoint'] for endpoint in ('news', 'blog')):
+        raise AssertionError('Both news and blog source collection are required')
+    if sum(int(n) for n in quality['score_distribution'].values()) != summary['selected']:
+        raise AssertionError('Quality score distribution does not match selected count')
+    if any(int(score) < daily.MIN_EDITORIAL_SCORE for score in quality['score_distribution']):
+        raise AssertionError('Below-threshold candidate was selected')
+    report = {'status': 'passed', 'summary': summary, 'allocation': allocation, 'quality': quality,
               'collection': collected, 'http_calls': dict(guard.calls),
               'forbidden_requests': guard.blocked,
               'note': 'Search results are unverified leads; result totals are not search volume.'}
