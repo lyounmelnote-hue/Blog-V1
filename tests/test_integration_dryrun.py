@@ -77,6 +77,30 @@ class ReadOnlyIntegrationTests(unittest.TestCase):
             finally:
                 os.chdir(previous)
 
+    def test_existing_category_can_receive_overflow_and_capacity_is_respected(self):
+        from src.daily import choose_flexible, CATEGORIES, MIN_EDITORIAL_SCORE
+        pool = {cat: [] for cat in CATEGORIES}
+        pool['문화'] = [{'title': f'culture-{i}', 'editorial_score': {'total': MIN_EDITORIAL_SCORE + 10}} for i in range(9)]
+        counts = {'문화': 2, '일상': 2, '생활정보팁': 2}
+        selected = choose_flexible(pool, counts)
+        self.assertEqual(len(selected), 4)
+        self.assertTrue(all(cat == '문화' for cat, _ in selected))
+
+    def test_underfilled_slots_are_not_forced_with_low_scores(self):
+        from src.daily import choose_flexible, CATEGORIES, MIN_EDITORIAL_SCORE
+        pool = {cat: [] for cat in CATEGORIES}
+        pool['문화'] = [{'title': 'good', 'editorial_score': {'total': MIN_EDITORIAL_SCORE}},
+                       {'title': 'bad', 'editorial_score': {'total': MIN_EDITORIAL_SCORE - 1}}]
+        selected = choose_flexible(pool, {'문화': 3})
+        self.assertEqual([item['title'] for _, item in selected], ['good'])
+
+    def test_collection_queries_news_and_blog_for_each_seed(self):
+        from src.daily import collect_candidates, SEEDS
+        with patch.object(daily, 'search', return_value=[{'title': 'lead'}]) as search:
+            leads = collect_candidates('문화')
+        self.assertEqual(search.call_count, len(SEEDS['문화']) * 2)
+        self.assertEqual({lead['search_endpoint'] for lead in leads}, {'news', 'blog'})
+
     def test_forbidden_http_never_reaches_transport(self):
         from unittest.mock import Mock
         transport = Mock()
