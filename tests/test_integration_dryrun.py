@@ -65,6 +65,9 @@ class ReadOnlyIntegrationTests(unittest.TestCase):
                 for writer in (log, save, queue, source):
                     writer.assert_not_called()
                 self.assertEqual(report['summary']['selected'], 8)
+                self.assertEqual(report['quality']['selected'], 8)
+                self.assertEqual(report['quality']['unfilled'], 0)
+                self.assertEqual(sum(report['quality']['raw_by_endpoint'].values()), sum(x['raw'] for x in report['collection']))
                 self.assertEqual(report['forbidden_requests'], 0)
                 self.assertTrue(all(x['duplicates'] > 0 for x in report['collection']))
                 self.assertTrue(any(x['rejected'] for x in report['collection']))
@@ -100,6 +103,24 @@ class ReadOnlyIntegrationTests(unittest.TestCase):
             leads = collect_candidates('문화')
         self.assertEqual(search.call_count, len(SEEDS['문화']) * 2)
         self.assertEqual({lead['search_endpoint'] for lead in leads}, {'news', 'blog'})
+
+    def test_one_open_slot_never_exceeds_daily_cap(self):
+        pool = {cat: [] for cat in daily.CATEGORIES}
+        pool['문화'] = [{'title': 'a', 'editorial_score': {'total': 88}},
+                       {'title': 'b', 'editorial_score': {'total': 78}}]
+        selected = daily.choose_flexible(pool, {'문화': 2, '일상': 2, '생활정보팁': 2, '건강': 2, '핫뉴스': 1})
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0][1]['title'], 'a')
+
+    def test_no_eligible_leads_leaves_slots_empty(self):
+        pool = {cat: [] for cat in daily.CATEGORIES}
+        self.assertEqual(daily.choose_flexible(pool, {}), [])
+
+    def test_blog_fit_penalizes_promotional_material(self):
+        from src.editorial_score import blog_fit
+        useful = {'title': '생활비 절약 방법 비교 체크리스트', 'summary': '신청 대상과 조건 정리'}
+        promotional = {'title': '브랜드 홍보대사 수상식 기념행사', 'summary': '업무협약 기념식 성료'}
+        self.assertGreater(blog_fit(useful), blog_fit(promotional))
 
     def test_forbidden_http_never_reaches_transport(self):
         from unittest.mock import Mock
