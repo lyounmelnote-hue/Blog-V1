@@ -70,6 +70,22 @@ class IntegrationAllocationTests(unittest.TestCase):
         pool['문화']=[{'title':str(i),'editorial_score':{'total':90-i}} for i in range(12)]
         result=choose_flexible(pool,{})
         self.assertEqual(len(result),10)
+    def test_low_quality_candidates_do_not_fill_slots(self):
+        from src.daily import choose_flexible, CATEGORIES, MIN_EDITORIAL_SCORE
+        pool = {c: [] for c in CATEGORIES}
+        pool['문화'] = [
+            {'title': 'useful', 'editorial_score': {'total': MIN_EDITORIAL_SCORE}},
+            {'title': 'low-quality', 'editorial_score': {'total': MIN_EDITORIAL_SCORE - 1}}]
+        result = choose_flexible(pool, {})
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][1]['title'], 'useful')
+
+    def test_quality_floor_applies_to_overflow(self):
+        from src.daily import choose_flexible, CATEGORIES, MIN_EDITORIAL_SCORE
+        pool = {c: [] for c in CATEGORIES}
+        pool['문화'] = [{'title': str(i), 'editorial_score': {'total': MIN_EDITORIAL_SCORE - 1}} for i in range(12)]
+        self.assertEqual(choose_flexible(pool, {}), [])
+
     def test_collects_news_and_blog(self):
         from unittest.mock import patch
         from src.daily import collect_candidates, SEEDS
