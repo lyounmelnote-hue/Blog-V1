@@ -277,12 +277,16 @@ def collect_candidates(category):
     return leads
 
 
+MIN_EDITORIAL_SCORE = 55  # conservative initial threshold; tune only after reviewing dry-run evidence
+
 def choose_flexible(pool, existing_counts, capacity=10):
     """Prefer two per category; fill remaining slots globally by score."""
     slots = {cat: max(0, 2 - existing_counts.get(cat, 0)) for cat in CATEGORIES}
     available = max(0, capacity - sum(existing_counts.values()))
     chosen = []
-    remaining = {cat: list(pool.get(cat, [])) for cat in CATEGORIES}
+    remaining = {cat: [item for item in pool.get(cat, [])
+                       if item.get('editorial_score', {}).get('total', 0) >= MIN_EDITORIAL_SCORE]
+                 for cat in CATEGORIES}
     for cat in CATEGORIES:
         take = min(slots[cat], available, len(remaining[cat]))
         chosen.extend((cat, item) for item in remaining[cat][:take])
@@ -348,7 +352,7 @@ def run():
             '원본 링크': {'url': item.get('url', '')}}})
     chosen_ids = {id(item) for _, item in selected}
     overflow = sorted(((cat, item) for cat in CATEGORIES for item in pool[cat]
-                       if id(item) not in chosen_ids),
+                       if id(item) not in chosen_ids and item.get('editorial_score', {}).get('total', 0) >= MIN_EDITORIAL_SCORE),
                       key=lambda pair: (-pair[1]['editorial_score']['total'], pair[1].get('title', '')))
     for category, item in overflow:
         if len(final_selected) >= remaining:
@@ -364,7 +368,7 @@ def run():
     selected = final_selected
     # An item that is already a same-day candidate must never be saved twice.
     print('FLEXIBLE_ALLOCATION', json.dumps({'existing': len(day_rows), 'selected': len(selected),
-          'remaining_unfilled': remaining - len(selected),
+          'remaining_unfilled': remaining - len(selected), 'minimum_score': MIN_EDITORIAL_SCORE,
           'by_category': dict(Counter(cat for cat, _ in selected))}, ensure_ascii=False))
     for category, item, match in audit:
         print('TOPIC_DEDUP', json.dumps({'category': category, 'type': match['type'],
