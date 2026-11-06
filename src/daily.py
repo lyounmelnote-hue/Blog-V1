@@ -266,7 +266,7 @@ def save_candidate(date, category, slot, score, item, evidence, run_id):
 
 
 def collect_candidates(category):
-    """Collect intent-led news and blog leads; search hits are never verified evidence."""
+    """Balanced search coverage: both endpoints per intent, without treating hits as evidence."""
     leads = []
     for seed in SEEDS[category]:
         for endpoint in ('news', 'blog'):
@@ -316,8 +316,11 @@ def run():
     seen = list(history) + list(day_rows)
     pool = {}
     audit = []
+    quality_rejected = Counter()
+    endpoint_counts = Counter()
     for category in CATEGORIES:
         raw = collect_candidates(category)
+        endpoint_counts.update(item.get('search_endpoint', 'unknown') for item in raw)
         novel, duplicates = topic_dedupe.filter_duplicates(raw, seen)
         audit.extend((category, item, match) for item, match in duplicates)
         if review_queue:
@@ -328,10 +331,12 @@ def run():
             ranked = []
             for score, item, evidence in accepted:
                 ranked.append(dict(item, editorial_score={'total': score}, verified_evidence=evidence))
+        quality_rejected[category] = sum(item.get('editorial_score', {}).get('total', 0) < MIN_EDITORIAL_SCORE for item in ranked)
         pool[category] = ranked
         print('COLLECT_DIAGNOSTICS', json.dumps({'category': category, 'raw': len(raw),
               'novel': len(novel), 'duplicates': len(duplicates), 'eligible': len(ranked),
-              'rejected': rejection_report(rejected)}, ensure_ascii=False))
+              'rejected': rejection_report(rejected), 'below_quality_floor': quality_rejected[category],
+              'by_endpoint': dict(Counter(item.get('search_endpoint', 'unknown') for item in raw))}, ensure_ascii=False))
         # Reserve unique candidates across categories, not merely the selected top two.
         for item in ranked:
             seen.append({'id': 'candidate', 'properties': {
@@ -366,6 +371,17 @@ def run():
             '후보 제목': {'title': [{'plain_text': item['title']}]},
             '원본 링크': {'url': item.get('url', '')}}})
     selected = final_selected
+    print('QUALITY_REPORT', json.dumps({
+          'existing': len(day_rows), 'capacity': remaining,
+          'raw_by_endpoint': dict(endpoint_counts),
+          'duplicates': len(audit),
+          'below_quality_floor': sum(quality_rejected.values()),
+          'selected': len(selected),
+          'unfilled': remaining - len(selected),
+          'minimum_score': MIN_EDITORIAL_SCORE,
+          'score_distribution': dict(sorted(Counter(
+              item['editorial_score']['total'] for _, item in selected).items()))
+          }, ensure_ascii=False))
     # An item that is already a same-day candidate must never be saved twice.
     print('FLEXIBLE_ALLOCATION', json.dumps({'existing': len(day_rows), 'selected': len(selected),
           'remaining_unfilled': remaining - len(selected), 'minimum_score': MIN_EDITORIAL_SCORE,
