@@ -36,7 +36,7 @@ def evaluate(category, item):
         reason = '자격·진로 중심 소재는 독자의 건강 관리 의도와 불일치'
     elif category == '핫뉴스' and (any(word in title for word in CAREER_INTENT)
             or not any(word in title for word in PUBLIC_CHANGE + SCIENCE_TOPIC)
-            or not any(word in title + ' ' + summary for word in PUBLIC_NEWS_INTENT)):
+            or not any(word in title for word in PUBLIC_NEWS_INTENT)):
         reason = '공공 제도·과학 소식 근거 부족; 개인 변경·입학 절차와 구분'
     elif not anchors:
         reason = '제목의 중심 주제가 카테고리와 불일치'

@@ -37,7 +37,9 @@ class CategoryTests(unittest.TestCase):
         for title, summary in (
             ('휴대폰 요금제 변경 전 확인할 6가지', '요금제 변경 방법과 할인 조건 안내'),
             ('2027 유치원 입학 준비 모집 일정과 유아학비 변경신청', '교육 제도 변경 신청 안내'),
-            ('2027학년도 과학기술원 정시 일정', '과학기술원 입학 제도 발표')):
+            ('2027학년도 과학기술원 정시 일정', '과학기술원 입학 제도 발표'),
+            ('주민청원제도 동네 문제 직접 의회에 올리는 법', '제도 시행 이후 신청 방법 안내'),
+            ('공공데이터와 생활통계로 달라지는 생활제도', '제도 변경 안내 정보를 조회하는 방법')):
             self.assertFalse(category_fit.evaluate('핫뉴스', dict(title=title, summary=summary))['accepted'])
         self.assertTrue(category_fit.evaluate('핫뉴스', {'title': '난임치료휴가 유급 확대 시행', 'summary': '휴가 제도 변경 대상과 시행 일정 안내'})['accepted'])
 
