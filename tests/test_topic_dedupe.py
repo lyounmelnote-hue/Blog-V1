@@ -38,6 +38,17 @@ class TopicDedupeTests(unittest.TestCase):
         from src.editorial_score import blog_fit
         self.assertGreater(blog_fit({'title':'난방비 절약 보일러 사용법 정리'}),
                            blog_fit({'title':'지역 기념식 축사 기념행사 성료'}))
+    def test_corporate_notice_ranks_below_practical_guide(self):
+        from src.editorial_score import blog_fit
+        guide = {'title': '한 달 난방비 절약 방법 보일러 사용법 정리'}
+        notice = {'title': '기업 고객센터 안내 고객 의견 서비스 개편 안내'}
+        self.assertGreater(blog_fit(guide), blog_fit(notice))
+
+    def test_health_policy_same_intent_duplicate(self):
+        self.assertTrue(semantic_topic_match(
+            '고혈압 당뇨 관리 전국 확대 통합센터 운영',
+            '고혈압 당뇨 관리 확대 전국 통합센터 시행'))
+
     def test_bad_url(self):
         self.assertEqual(canonical_url("javascript:alert(1)"),"")
     def test_not_approved_by_dedupe(self):
