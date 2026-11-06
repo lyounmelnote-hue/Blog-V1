@@ -33,6 +33,18 @@ class CategoryTests(unittest.TestCase):
     def test_reader_intent_is_required(self):
         self.assertFalse(category_fit.evaluate('문화', {'title': '문화 기업 소식', 'summary': '문화 기업 임직원 모임'})['accepted'])
 
+    def test_hot_news_distinguishes_public_change_from_personal_howto(self):
+        for title, summary in (
+            ('휴대폰 요금제 변경 전 확인할 6가지', '요금제 변경 방법과 할인 조건 안내'),
+            ('2027 유치원 입학 준비 모집 일정과 유아학비 변경신청', '교육 제도 변경 신청 안내'),
+            ('2027학년도 과학기술원 정시 일정', '과학기술원 입학 제도 발표')):
+            self.assertFalse(category_fit.evaluate('핫뉴스', dict(title=title, summary=summary))['accepted'])
+        self.assertTrue(category_fit.evaluate('핫뉴스', {'title': '난임치료휴가 유급 확대 시행', 'summary': '휴가 제도 변경 대상과 시행 일정 안내'})['accepted'])
+
+    def test_health_includes_infection_but_excludes_career_intent(self):
+        self.assertTrue(category_fit.evaluate('건강', {'title': '독감 유행 예방 수칙', 'summary': '독감 백신 접종 대상과 예방 안내'})['accepted'])
+        self.assertFalse(category_fit.evaluate('건강', {'title': '건강관리사 자격증 교육기관 안내', 'summary': '건강 관리 방법과 교육 과정 안내'})['accepted'])
+
     def test_practical_information_beats_advertising_and_event_notice(self):
         guide = {'title': '전시 관람 예약 방법 비교', 'summary': '전시 일정 비용과 대상 조건 준비 안내'}
         for title in ('기업 홍보 브랜드 론칭 광고', '행사 개최 발표 기념식 성료', '업무협약 수상 보도자료'):
